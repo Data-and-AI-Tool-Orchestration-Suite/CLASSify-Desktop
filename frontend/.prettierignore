@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.config.*
+src/lib/api/types.ts

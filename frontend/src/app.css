@@ -1,0 +1,174 @@
+/* Bootstrap must be imported first — before any other CSS rules */
+@import "bootstrap/dist/css/bootstrap.min.css";
+
+/* ── CLASSify Desktop — ported design system from the web app ──
+   CSS variables mirror frontend/css/variables.css.php from CLASSify-2. */
+
+:root {
+  --title-text: "CLASSify Desktop";
+  --title-text-color: #ffffff;
+  --navbar-color: #1a48aa;
+  --navbar-menu-color: #ffffff;
+  --menu-active-dropdown-text-color: #ffffff;
+  --menu-active-dropdown-bg-color: #0d6efd;
+  --button-primary: #0d6efd;
+  --button-secondary: #6c757d;
+  --button-success: #198754;
+  --button-danger: #dc3545;
+  --button-warning: #ffc107;
+  --button-info: #0dcaf0;
+  --button-light: #f8f9fa;
+  --button-dark: #343a40;
+  --bg-faded: #f8f9fa;
+  --border-color: #dee2e6;
+}
+
+/* Navbar */
+.navbar {
+  background-color: var(--navbar-color);
+}
+
+.navbar .navbar-brand .brand-text {
+  color: var(--title-text-color);
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.navbar .nav-link,
+.navbar .navbar-toggler {
+  color: var(--navbar-menu-color);
+}
+
+.navbar .nav-link.active {
+  font-weight: 600;
+}
+
+.navbar .nav-link:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Main content area */
+main.container-fluid {
+  background-color: var(--bg-faded);
+  min-height: calc(100vh - 56px);
+}
+
+/* Cards */
+.card {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border-color: var(--border-color);
+}
+
+.card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Tables */
+.table > :not(caption) > * > * {
+  padding: 0.6rem 0.5rem;
+}
+
+.table-hover > tbody > tr:hover > * {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* Badges */
+.badge {
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+
+/* Buttons */
+.btn-primary {
+  --bs-btn-bg: var(--button-primary);
+  --bs-btn-border-color: var(--button-primary);
+}
+
+/* Modal backdrop override for Svelte (no Bootstrap JS) */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1050;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal {
+  z-index: 1055;
+}
+
+/* Loading overlay */
+#cover-spin {
+  position: fixed;
+  width: 100%;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  z-index: 9999;
+  display: none;
+}
+
+#cover-spin.active {
+  display: block;
+}
+
+#cover-spin::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3rem;
+  height: 3rem;
+  margin: -1.5rem 0 0 -1.5rem;
+  border: 0.3rem solid var(--border-color);
+  border-top-color: var(--button-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Toast container */
+.toast-container .toast {
+  min-width: 300px;
+  border: none;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Preformatted output (log viewer) */
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Viz gallery images */
+.card-img-top {
+  max-height: 400px;
+  object-fit: contain;
+}
+
+/* Drag-drop zone hover */
+[style*="border-style: dashed"]:hover {
+  border-color: var(--button-primary) !important;
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* List group items for class mapping */
+.list-group-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Progress bar */
+.progress {
+  border-radius: 0.375rem;
+}

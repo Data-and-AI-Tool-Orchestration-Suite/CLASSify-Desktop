@@ -1,0 +1,6 @@
+# TabPFN add-on dependencies — installed via the Add-ons page, NOT bundled.
+# These pull torch (~2GB).
+
+torch>=2.3
+tabpfn>=2.0
+huggingface-hub>=0.24

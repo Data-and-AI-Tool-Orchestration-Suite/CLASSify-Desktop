@@ -1,0 +1,50 @@
+# Runtime dependencies for CLASSify Desktop (base installer — NO torch).
+# Generated from pyproject.toml [project.dependencies] + [project.optional-dependencies.ml]
+# Pinned for reproducible builds via PyInstaller.
+#
+# To regenerate: pip-compile pyproject.toml -o requirements/runtime.txt --extra ml
+
+# Web server
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# Config
+pydantic>=2.7
+pydantic-settings>=2.3
+
+# Database
+sqlalchemy>=2.0
+alembic>=1.13
+
+# Logging
+structlog>=24.1
+
+# Encryption (optional, off by default)
+cryptography>=43
+keyring>=25
+
+# ML (base — no torch)
+numpy>=2.0,<3
+pandas>=2.2,<3
+scipy>=1.13,<2
+scikit-learn>=1.5,<2
+xgboost>=3.0
+shap>=0.46
+hdbscan>=0.8.39
+pyamg>=5.2
+numba>=0.60
+imbalanced-learn>=0.13
+optuna>=4.0
+joblib>=1.4
+charset-normalizer>=3.3
+matplotlib>=3.9
+plotly>=5.24
+seaborn>=0.13
+
+# Reports
+reportlab>=4.2
+xlsxwriter>=3.2
+
+# Desktop shell
+pywebview>=5.3

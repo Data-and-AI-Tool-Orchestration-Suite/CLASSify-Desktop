@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend quality (no matrix needed) ──
+  backend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff format --check backend desktop tests
+      - run: ruff check backend desktop tests
+      - run: mypy backend desktop
+      - run: pip-audit --strict
+
+  # ── Frontend quality ──
+  frontend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run format:check
+          npm run check
+      - working-directory: frontend
+        run: npm audit --audit-level=high || true
+
+  # ── Backend tests (3-OS matrix) ──
+  backend-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/backend -m "not ml_regression and not addon and not e2e"
+        env:
+          MPLBACKEND: Agg
+      - uses: codecov/codecov-action@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          files: ./coverage.xml
+
+  # ── Frontend tests ──
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm test
+      - uses: codecov/codecov-action@v4
+        with:
+          directory: frontend/coverage
+
+  # ── OpenAPI type sync check ──
+  openapi-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -e ".[dev]"
+      - working-directory: frontend
+        run: npm ci
+      - run: |
+          python -c "from classify_api.main import app; import json; print(json.dumps(app.openapi()))" > openapi.json
+        env:
+          CLASSIFY_DEV_MODE: "true"
+      - working-directory: frontend
+        run: npx openapi-typescript ../openapi.json -o src/lib/api/types.ts
+      - run: git diff --exit-code -- frontend/src/lib/api/types.ts
+
+  # ── Build smoke (3-OS matrix, frozen app boots) ──
+  build-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: python -c "from classify_api.main import create_app; app = create_app(); print('App created OK')"
+        env:
+          CLASSIFY_DEV_MODE: "true"
