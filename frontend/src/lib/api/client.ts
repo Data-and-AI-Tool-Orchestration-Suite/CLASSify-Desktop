@@ -80,6 +80,17 @@ export const system = {
       release_notes: string;
       error: string | null;
     }>("/system/check-updates"),
+  firstRun: () =>
+    request<{
+      first_run: boolean;
+      data_dir: string;
+      disk_free_bytes: number;
+      cpu_count: number;
+      has_addons: { tabpfn: boolean; sdv: boolean };
+    }>("/system/first-run"),
+  completeFirstRun: () =>
+    request<{ status: string }>("/system/first-run/complete", { method: "POST" }),
+  metricDefs: () => request<Record<string, string>>("/system/metric-defs"),
 };
 
 // ── Datasets ──
@@ -228,7 +239,10 @@ export const addons = {
     request<{ success: boolean; message: string }>(`/addons/${name}/install`, { method: "POST" }),
   uninstall: (name: string) =>
     request<{ success: boolean; message: string }>(`/addons/${name}/uninstall`, { method: "POST" }),
-  checkModules: () => request<{ modules: { name: string; module: string; installed: boolean }[] }>("/addons/modules/check"),
+  checkModules: () =>
+    request<{ modules: { name: string; module: string; installed: boolean }[] }>(
+      "/addons/modules/check",
+    ),
 };
 
 export interface ResultsResponse {

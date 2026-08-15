@@ -110,7 +110,6 @@ def check_updates() -> dict[str, object]:
         if _parse_version(latest_version) > _parse_version(APP_VERSION):
             result["update_available"] = True
 
-            # Pick the right asset for this platform
             assets = manifest.get("assets", {})
             system = platform.system()
             if system == "Windows":
@@ -128,3 +127,52 @@ def check_updates() -> dict[str, object]:
         result["error"] = f"Failed to check for updates: {e}"
 
     return result
+
+
+@router.get("/first-run")
+def first_run_status() -> dict[str, object]:
+    """Get first-run wizard state."""
+    from classify_api.services.first_run import get_wizard_state
+
+    return get_wizard_state()
+
+
+@router.post("/first-run/complete")
+def complete_first_run() -> dict[str, str]:
+    """Mark the first-run wizard as complete."""
+    from classify_api.services.first_run import mark_initialized
+
+    mark_initialized()
+    return {"status": "ok"}
+
+
+@router.get("/metric-defs")
+def metric_definitions() -> dict[str, object]:
+    """Get metric tooltip definitions for the results table.
+
+    Ported from the web app's tooltip dictionary.
+    """
+    return {
+        "test_auc": "Area Under the ROC Curve (test set). Measures discrimination: 0.5=chance, 1.0=perfect.",
+        "test_acc": "Accuracy (test set). Proportion of correct predictions.",
+        "test_sensitivity": "Sensitivity / Recall (test set). True positive rate: TP/(TP+FN).",
+        "test_specificity": "Specificity (test set). True negative rate: TN/(TN+FP).",
+        "test_npv": "Negative Predictive Value (test set). TN/(TN+FN).",
+        "test_ppv": "Positive Predictive Value / Precision (test set). TP/(TP+FP).",
+        "test_f1score": "F1 Score (test set). Harmonic mean of precision and recall.",
+        "test_kappa": "Cohen's Kappa (test set). Agreement corrected for chance.",
+        "trt_auc": "Area Under the ROC Curve (training set). Check for overfitting vs test AUC.",
+        "trt_acc": "Accuracy (training set).",
+        "trt_sensitivity": "Sensitivity (training set).",
+        "trt_specificity": "Specificity (training set).",
+        "trt_f1score": "F1 Score (training set).",
+        "cvt_auc": "Cross-validated AUC (mean ± margin of error).",
+        "cvt_acc": "Cross-validated accuracy (mean ± margin of error).",
+        "cvt_sensitivity": "Cross-validated sensitivity (mean ± margin of error).",
+        "cvt_specificity": "Cross-validated specificity (mean ± margin of error).",
+        "cvt_f1score": "Cross-validated F1 score (mean ± margin of error).",
+        "best_score": "Best Optuna tuning score for this model.",
+        "silhouette_score": "Clustering: how similar an object is to its own cluster vs others. Range [-1, 1], higher is better.",
+        "calinski_harabasz_score": "Clustering: ratio of between-cluster to within-cluster dispersion. Higher is better.",
+        "davies_bouldin_score": "Clustering: average similarity ratio of each cluster. Lower is better (minimum 0).",
+    }

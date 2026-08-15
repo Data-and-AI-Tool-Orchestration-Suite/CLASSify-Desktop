@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { push } from "svelte-spa-router";
-  import { results as resultsApi, datasets as datasetsApi, type DatasetRow } from "$lib/api/client";
+  import {
+    results as resultsApi,
+    datasets as datasetsApi,
+    system,
+    type DatasetRow,
+  } from "$lib/api/client";
   import { toasts, currentJob, jobPolling, cancelJob } from "$lib/stores/app";
   import JobProgress from "$lib/components/JobProgress.svelte";
 
@@ -21,6 +26,7 @@
   let shapModel = $state("");
   let shapModels = $state<string[]>([]);
   let shapRows = $state<Record<string, any>[]>([]);
+  let metricDefs = $state<Record<string, string>>({});
   let shapColumns = $state<string[]>([]);
 
   async function loadAll() {
@@ -29,7 +35,7 @@
       report = await datasetsApi.get(reportId);
 
       if (report.status === "Processed") {
-        await Promise.all([loadResults(), loadViz(), loadLog()]);
+        await Promise.all([loadResults(), loadViz(), loadLog(), loadMetricDefs()]);
       }
     } catch {
       toasts.error("Failed to load results");
@@ -70,6 +76,14 @@
       outputLog = resp.log;
     } catch {
       // No log
+    }
+  }
+
+  async function loadMetricDefs() {
+    try {
+      metricDefs = await system.metricDefs();
+    } catch {
+      // Non-fatal
     }
   }
 
@@ -201,7 +215,7 @@
             <thead class="table-light">
               <tr>
                 {#each resultsData.columns as col}
-                  <th>{col}</th>
+                  <th title={metricDefs[col] || ""}>{col}</th>
                 {/each}
               </tr>
             </thead>

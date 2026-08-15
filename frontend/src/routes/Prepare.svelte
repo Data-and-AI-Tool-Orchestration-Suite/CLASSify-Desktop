@@ -217,8 +217,16 @@
 
   <!-- ML Options -->
   <div class="card mb-4">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Training Options</h5>
+      {#if trainGroup.length > 0}
+        <span class="text-muted small">
+          {trainGroup.length} model{trainGroup.length > 1 ? "s" : ""} selected
+          {#if parameterTune}
+            · tuning enabled (slower)
+          {/if}
+        </span>
+      {/if}
     </div>
     <div class="card-body">
       <!-- Supervised/Unsupervised toggle -->
@@ -382,6 +390,20 @@
       </div>
     </div>
   </div>
+
+  <!-- Training estimate warning -->
+  {#if trainGroup.length > 3 || (parameterTune && trainGroup.length > 1)}
+    <div class="alert alert-warning d-flex align-items-center gap-2">
+      <span>⏱️</span>
+      <div class="small">
+        Training {trainGroup.length} models{parameterTune ? " with parameter tuning" : ""} may take several
+        minutes. You can cancel mid-training from the results page.
+        {#if trainGroup.includes("neuralnetwork") || trainGroup.includes("tabpfn")}
+          Neural networks and TabPFN are especially compute-intensive on large datasets.
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <!-- Train button -->
   <div class="d-flex justify-content-end gap-2">

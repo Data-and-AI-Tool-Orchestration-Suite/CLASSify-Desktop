@@ -58,14 +58,16 @@
   }
 </script>
 
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+<div
+  class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom"
+>
   <h1 class="h4">Add-ons</h1>
 </div>
 
 <div class="alert alert-info">
   <strong>About Add-ons</strong><br />
-  Add-ons provide optional ML capabilities that require large dependencies (torch ~2GB).
-  They are not included in the base installer. Install them on demand — all data stays local.
+  Add-ons provide optional ML capabilities that require large dependencies (torch ~2GB). They are not
+  included in the base installer. Install them on demand — all data stays local.
 </div>
 
 {#if loading}

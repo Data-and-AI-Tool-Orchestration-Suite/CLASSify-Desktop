@@ -30,8 +30,8 @@
       }
     } else {
       classValues.forEach((v: string) => {
-      m[v] = Object.keys(m).length;
-    });
+        m[v] = Object.keys(m).length;
+      });
     }
     mapping = m;
   });

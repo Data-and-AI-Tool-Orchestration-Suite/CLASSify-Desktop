@@ -8,6 +8,7 @@
   import Addons from "./routes/Addons.svelte";
   import Navbar from "./lib/components/Navbar.svelte";
   import Toasts from "./lib/components/Toasts.svelte";
+  import AppGate from "./lib/components/AppGate.svelte";
 
   const routes = {
     "/": Home,
@@ -19,10 +20,12 @@
   };
 </script>
 
-<Navbar />
+<AppGate>
+  <Navbar />
 
-<main class="container-fluid py-3">
-  <Router {routes} />
-</main>
+  <main class="container-fluid py-3">
+    <Router {routes} />
+  </main>
+</AppGate>
 
 <Toasts />
