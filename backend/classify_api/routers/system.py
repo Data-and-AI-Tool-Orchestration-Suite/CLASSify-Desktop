@@ -15,9 +15,7 @@ from classify_api.settings import get_settings
 router = APIRouter()
 
 # Stable URL for the update manifest — always redirects to the latest stable release
-UPDATE_MANIFEST_URL = (
-    "https://github.com/uk-applied-ai/CLASSify-app/releases/latest/download/latest.json"
-)
+UPDATE_MANIFEST_URL = "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/latest/download/latest.json"
 
 APP_VERSION = "1.0.0.dev0"
 
