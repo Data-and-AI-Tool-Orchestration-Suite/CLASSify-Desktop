@@ -3,6 +3,22 @@
   "released_at": "2026-08-17T01:45:00Z",
   "channel": "stable",
   "minimum_upgrade_from": "0.0.0",
-  "assets": {},
+  "assets": {
+    "windows-x64": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.0.0/CLASSify-Setup-1.0.0-x64.exe",
+      "sha256": "f146e9b076e17179b541b69e1cb095f6eaff7a5576286d1882097882438e450e",
+      "size": 159767266
+    },
+    "macos-universal2": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.0.0/CLASSify-1.0.0-macos.zip",
+      "sha256": "",
+      "size": 0
+    },
+    "linux-x86_64-appimage": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.0.0/CLASSify-1.0.0-linux.tar.gz",
+      "sha256": "",
+      "size": 0
+    }
+  },
   "notes": "CLASSify Desktop v1.0.0 — Initial stable release.\n\nFeatures:\n- CSV upload with automatic column-type detection (int, float, bool, categorical)\n- Column configuration modal with missing-value handling (drop, constant, synthetic)\n- Class column mapping with drag-drop string-to-integer interface\n- Supervised classification: RandomForest, XGBoost, GradientBoosting, HistGradientBoosting, NeuralNetwork, LogisticRegression, KNeighbors, Bagging, SGDClassifier, TabPFN (addon)\n- Unsupervised clustering: KMeans, SpectralClustering, HDBSCAN\n- Parameter tuning via Optuna with configurable search ranges\n- SHAP feature explainability with per-row waterfall plots\n- Cross-validation with repeats and margin-of-error reporting\n- Visualization suite: ROC curves, confusion matrices, SHAP beeswarm, feature heatmaps\n- Live training log streaming via SSE\n- Run history with archived results, logs, and visualizations\n- Rerun with previous settings pre-populated\n- Add-on system for torch-gated models (TabPFN, SDV) with async install and progress tracking\n- In-app update checker\n- Local-first: all data stays on your machine (SQLite + filesystem)"
 }

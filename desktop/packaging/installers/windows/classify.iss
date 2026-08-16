@@ -7,7 +7,7 @@
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "UK Center for Applied AI"
 #define MyAppExeName "CLASSify.exe"
-#define MyAppSource "..\..\..\dist\CLASSify"
+#define MyAppSource "..\..\..\..\dist\CLASSify"
 
 [Setup]
 AppId={{CLASSIFY-DESKTOP-001}}
@@ -17,7 +17,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\CLASSify
 DefaultGroupName=CLASSify
 DisableProgramGroupPage=yes
-OutputDir=..\..\..\dist\installers
+OutputDir=..\..\..\..\dist\installers
 OutputBaseFilename=CLASSify-Setup-{#MyAppVersion}-x64
 Compression=lzma2
 SolidCompression=yes

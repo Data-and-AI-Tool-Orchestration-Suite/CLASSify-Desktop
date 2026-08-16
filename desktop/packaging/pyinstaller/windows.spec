@@ -13,7 +13,7 @@ from pathlib import Path
 block_cipher = None
 
 # Repository root (spec file is at desktop/packaging/pyinstaller/)
-repo_root = Path(SPECPATH).parents[3]
+repo_root = Path(SPECPATH).parents[2]
 frontend_dist = str(repo_root / "frontend" / "dist")
 migrations_dir = str(repo_root / "backend" / "migrations")
 
@@ -88,7 +88,7 @@ a = Analysis(
         str(repo_root / "desktop"),
     ],
     binaries=[],
-    datas=a_data,
+    datas=a_datas,
     hiddenimports=a_hidden_imports,
     hookspath=[],
     runtime_hooks=[],
