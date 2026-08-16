@@ -290,6 +290,18 @@ def objective(trial: optuna.Trial, emethod: str, args: Any, X: Any, y: Any, outp
         return 0.0
 
 
+def _convert_best_params(emethod: str, best_params: dict[str, Any]) -> dict[str, Any]:
+    """Convert Optuna trial param names to sklearn constructor param names."""
+    if emethod == "neuralnetwork":
+        hidden_size = best_params.pop("nn_hidden_layer_sizes")
+        hidden_depth = best_params.pop("nn_hidden_layer_depth")
+        best_params["hidden_layer_sizes"] = tuple([hidden_size] * hidden_depth)
+        best_params["learning_rate_init"] = best_params.pop("nn_learning_rate")
+    elif emethod == "bagging":
+        best_params["max_samples"] = best_params.pop("subsample")
+    return best_params
+
+
 def run_tuning(
     emethod: str,
     args: Any,
@@ -313,4 +325,5 @@ def run_tuning(
         objective, emethod=emethod, args=args, X=X, y=y, output_f=output_f
     )
     study.optimize(objective_with_params, n_trials=args.n_iter)
-    return study.best_trial.params, float(study.best_value)
+    best_params = _convert_best_params(emethod, dict(study.best_trial.params))
+    return best_params, float(study.best_value)

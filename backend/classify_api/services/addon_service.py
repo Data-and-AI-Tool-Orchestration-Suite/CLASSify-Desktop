@@ -4,6 +4,10 @@ Add-ons (TabPFN, SDV) pull torch (~2GB) and are NOT included in the base
 installer.  Users install them on demand via Settings → Add-ons or the
 API.  Installed add-ons live in ``<appdata>/addons/pythonlibs`` and are
 prepended to ``sys.path`` at boot so the ML engine can import them.
+
+Installs run asynchronously in a background thread so the API doesn't
+block for the 5-10 minutes a large download takes.  Progress is tracked
+in a shared dict that the frontend polls via the install-status endpoint.
 """
 
 from __future__ import annotations
@@ -11,7 +15,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +26,8 @@ from classify_api.settings import get_settings
 from ml.backends import refresh_cache
 
 log = structlog.get_logger()
+
+_CPU_TORCH_INDEX = "https://download.pytorch.org/whl/cpu"
 
 
 @dataclass
@@ -72,6 +79,41 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
 }
 
 
+# ── Install status tracking (shared between background thread + API) ──
+
+
+@dataclass
+class InstallStatus:
+    """Live status of an add-on installation."""
+
+    addon: str
+    state: str = "idle"  # idle, installing, succeeded, failed
+    progress: list[str] = field(default_factory=list)
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "addon": self.addon,
+            "state": self.state,
+            "progress": self.progress,
+            "error": self.error,
+        }
+
+
+_install_status: dict[str, InstallStatus] = {}
+_install_lock = threading.Lock()
+_install_serial_lock = threading.Lock()
+
+
+def get_install_status(name: str) -> dict[str, Any]:
+    """Return the current install status for an add-on."""
+    with _install_lock:
+        status = _install_status.get(name)
+        if status is None:
+            return {"addon": name, "state": "idle", "progress": [], "error": None}
+        return status.to_dict()
+
+
 def get_addon_dir() -> Path:
     """Return the directory where add-on packages are installed."""
     settings = get_settings()
@@ -116,30 +158,119 @@ def is_addon_installed(name: str) -> bool:
     return name in get_installed_addons()
 
 
-def install_addon(name: str, on_progress: Any = None) -> dict[str, Any]:
-    """Install an add-on by pip-installing its deps into the addon dir.
+def install_addon(name: str) -> dict[str, Any]:
+    """Start an add-on installation in a background thread.
 
-    Args:
-        name: Add-on name (must be in BUILTIN_ADDONS)
-        on_progress: Optional callback(message: str) for progress updates
-
-    Returns: {"success": bool, "message": str}
+    Returns immediately with the initial status.  Poll
+    ``get_install_status(name)`` to track progress.
     """
     if name not in BUILTIN_ADDONS:
         return {"success": False, "message": f"Unknown add-on: {name}"}
 
+    with _install_lock:
+        existing = _install_status.get(name)
+        if existing and existing.state == "installing":
+            return {"success": False, "message": f"{name} is already installing"}
+
+        # Block if ANY other addon is installing (shared target dir)
+        for other_name, other_status in _install_status.items():
+            if other_name != name and other_status.state == "installing":
+                return {
+                    "success": False,
+                    "message": f"Another add-on ({other_name}) is installing. Wait for it to finish.",
+                }
+
+        status = InstallStatus(addon=name, state="queued", progress=[])
+        _install_status[name] = status
+
+    thread = threading.Thread(target=_run_install, args=(name,), daemon=True)
+    thread.start()
+
+    return {"success": True, "message": f"Installation started for {name}"}
+
+
+def _verify_in_subprocess(modules: list[str], addon_dir: Path) -> tuple[bool, str | None]:
+    """Verify that modules can be imported in a fresh subprocess.
+
+    Uses a subprocess so that imported DLLs are released when the process
+    exits, keeping them unlocked for future reinstalls on Windows.
+    """
+    import os
+
+    import_str = "; ".join(f"import {m}" for m in modules)
+    env = {**os.environ, "PYTHONPATH": str(addon_dir)}
+    result = subprocess.run(
+        [sys.executable, "-c", import_str],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    if result.returncode != 0:
+        err = result.stderr.strip()[-500:] if result.stderr else "Unknown error"
+        return False, err
+    return True, None
+
+
+def _clear_addon_dir(addon_dir: Path) -> bool:
+    """Try to clear the addon dir before a fresh install.
+
+    Returns True if successful, False if some files were locked (Windows).
+    """
+    import shutil
+
+    try:
+        if addon_dir.exists():
+            shutil.rmtree(addon_dir)
+        addon_dir.mkdir(parents=True, exist_ok=True)
+        return True
+    except PermissionError:
+        return False
+
+
+def _run_install(name: str) -> None:
+    """Background install worker — runs pip and updates status."""
     manifest = BUILTIN_ADDONS[name]
     addon_dir = get_addon_dir()
 
-    def log_progress(msg: str) -> None:
+    def update(msg: str) -> None:
+        with _install_lock:
+            status = _install_status.get(name)
+            if status:
+                status.progress.append(msg)
         log.info("addon.install_progress", addon=name, message=msg)
-        if on_progress:
-            on_progress(msg)
 
-    log_progress(f"Installing {name} add-on ({manifest.size_estimate_mb} MB estimated)...")
-    log_progress(f"Installing packages: {', '.join(manifest.pip_deps)}")
+    def fail(msg: str) -> None:
+        update(msg)
+        with _install_lock:
+            if name in _install_status:
+                _install_status[name].state = "failed"
+                _install_status[name].error = msg
 
     try:
+        # Serialize installs — only one at a time (shared target directory)
+        with _install_lock:
+            if name in _install_status:
+                _install_status[name].state = "queued"
+        update("Waiting for other installations to complete...")
+        _install_serial_lock.acquire()
+        with _install_lock:
+            if name in _install_status:
+                _install_status[name].state = "installing"
+
+        update(f"Installing {name} add-on ({manifest.size_estimate_mb} MB estimated)...")
+        update(f"Packages: {', '.join(manifest.pip_deps)}")
+        update("Using CPU-only torch index to minimize download size...")
+
+        # Clear stale files from previous/failed installs
+        update("Clearing previous installation files...")
+        if not _clear_addon_dir(addon_dir):
+            fail(
+                "Cannot clear previous installation — files are locked. "
+                "Restart the app and try again."
+            )
+            return
+
         cmd = [
             sys.executable,
             "-m",
@@ -147,74 +278,50 @@ def install_addon(name: str, on_progress: Any = None) -> dict[str, Any]:
             "install",
             "--target",
             str(addon_dir),
-            "--no-deps" if name == "tabpfn" else "--upgrade",
+            "--no-cache-dir",
+            "--extra-index-url",
+            _CPU_TORCH_INDEX,
+            *manifest.pip_deps,
         ]
 
-        if name == "tabpfn":
-            cmd.append("--no-deps")
-
-        cmd.extend(manifest.pip_deps)
-
+        update("Running pip install (this may take several minutes)...")
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=900,
         )
 
         if result.returncode != 0:
-            error = result.stderr[-500:] if result.stderr else "Unknown pip error"
-            log_progress(f"pip failed: {error}")
-            return {"success": False, "message": f"pip install failed: {error}"}
+            error = result.stderr[-1000:] if result.stderr else "Unknown pip error"
+            fail(f"pip failed: {error}")
+            return
 
-        # Also install dependencies (for --no-deps case)
-        if name == "tabpfn":
-            log_progress("Installing torch and huggingface-hub dependencies...")
-            dep_result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--target",
-                    str(addon_dir),
-                    "torch>=2.3",
-                    "huggingface-hub>=0.24",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
-            if dep_result.returncode != 0:
-                log_progress(f"Warning: dependency install had issues: {dep_result.stderr[-200:]}")
+        # Verify in a subprocess so DLLs are released after verification
+        update("Verifying installation...")
+        _prepend_addon_path()
+        refresh_cache()
+
+        ok, err = _verify_in_subprocess(manifest.provides, addon_dir)
+        if not ok:
+            fail(f"Verification failed: {err}")
+            return
+
+        installed = get_installed_addons()
+        installed[name] = manifest.version
+        get_installed_addons_file().write_text(json.dumps(installed, indent=2))
+
+        update(f"{name} add-on installed successfully!")
+        with _install_lock:
+            if name in _install_status:
+                _install_status[name].state = "succeeded"
 
     except subprocess.TimeoutExpired:
-        return {"success": False, "message": "Installation timed out (10 min limit)"}
+        fail("Installation timed out (15 min limit)")
     except Exception as e:
-        return {"success": False, "message": f"Installation error: {e}"}
-
-    # Verify the import works
-    log_progress("Verifying installation...")
-    _prepend_addon_path()
-    refresh_cache()
-
-    for module in manifest.provides:
-        try:
-            __import__(module)
-        except ImportError as e:
-            log_progress(f"Verification failed for {module}: {e}")
-            return {
-                "success": False,
-                "message": f"Module {module} could not be imported after install",
-            }
-
-    # Register as installed
-    installed = get_installed_addons()
-    installed[name] = manifest.version
-    get_installed_addons_file().write_text(json.dumps(installed, indent=2))
-
-    log_progress(f"{name} add-on installed successfully!")
-    return {"success": True, "message": f"{name} add-on installed"}
+        fail(f"Installation error: {e}")
+    finally:
+        _install_serial_lock.release()
 
 
 def uninstall_addon(name: str) -> dict[str, Any]:
@@ -232,7 +339,6 @@ def uninstall_addon(name: str) -> dict[str, Any]:
 
     addon_dir = get_addon_dir()
 
-    # Check if other add-ons are still installed (they share torch)
     other_installed = [k for k in installed if k != name]
     if not other_installed:
         import shutil
@@ -276,9 +382,14 @@ def get_addon_status(name: str) -> dict[str, Any]:
     manifest = BUILTIN_ADDONS[name]
     installed = is_addon_installed(name)
 
-    from ml.backends import is_available
-
-    modules_available = {mod: is_available(mod) for mod in manifest.provides}
+    # Verify in subprocess to avoid locking DLLs in the main process
+    addon_dir = get_addon_dir()
+    modules_available: dict[str, bool] = {}
+    if installed and addon_dir.exists():
+        ok, _ = _verify_in_subprocess(manifest.provides, addon_dir)
+        modules_available = {mod: ok for mod in manifest.provides}
+    else:
+        modules_available = {mod: False for mod in manifest.provides}
 
     return {
         "name": name,

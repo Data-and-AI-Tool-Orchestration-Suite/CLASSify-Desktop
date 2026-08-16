@@ -153,6 +153,12 @@ export const datasets = {
     request<{ success: boolean; message: string }>(`/datasets/${id}`, { method: "DELETE" }),
   duplicate: (id: string) =>
     request<{ success: boolean; message: string }>(`/datasets/${id}/duplicate`, { method: "POST" }),
+  columnTypes: (id: string) =>
+    request<{
+      success: boolean;
+      data_types: Record<string, string>;
+      missing_values: Record<string, boolean>;
+    }>(`/datasets/${id}/column-types`),
   columnChanges: (id: string, dataTypes: ColumnChange[]) =>
     request<{ success: boolean; message: string; data_types: ColumnChange[] }>(
       `/datasets/${id}/column-changes`,
@@ -180,6 +186,10 @@ export const datasets = {
       method: "PATCH",
       body: JSON.stringify({ comments }),
     }),
+  parameters: (id: string) =>
+    request<{ success: boolean; args: Record<string, any> | null }>(
+      `/datasets/${id}/parameters`,
+    ),
 };
 
 // ── Jobs ──
@@ -237,6 +247,13 @@ export const addons = {
   status: (name: string) => request<Record<string, unknown>>(`/addons/${name}/status`),
   install: (name: string) =>
     request<{ success: boolean; message: string }>(`/addons/${name}/install`, { method: "POST" }),
+  installStatus: (name: string) =>
+    request<{
+      addon: string;
+      state: string;
+      progress: string[];
+      error: string | null;
+    }>(`/addons/${name}/install-status`),
   uninstall: (name: string) =>
     request<{ success: boolean; message: string }>(`/addons/${name}/uninstall`, { method: "POST" }),
   checkModules: () =>
@@ -269,6 +286,14 @@ export interface PrepareParamsResponse {
   class_column: string | null;
 }
 
+export interface RunInfo {
+  job_id: string;
+  state: string;
+  created_at: string | null;
+  is_current: boolean;
+  args: Record<string, any> | null;
+}
+
 export const results = {
   get: (reportId: string) => request<ResultsResponse>(`/results/${reportId}`),
   vizList: (reportId: string) => request<VizListResponse>(`/results/${reportId}/viz`),
@@ -295,4 +320,16 @@ export const results = {
     `${BASE}/results/${reportId}/download?suffix=${encodeURIComponent(suffix)}`,
   prepareParams: (reportId: string) =>
     request<PrepareParamsResponse>(`/results/${reportId}/prepare-params`),
+  listRuns: (reportId: string) =>
+    request<{ success: boolean; runs: RunInfo[] }>(`/results/${reportId}/runs`),
+  runResults: (reportId: string, jobId: string) =>
+    request<ResultsResponse>(`/results/${reportId}/runs/${jobId}/results`),
+  runOutputLog: (reportId: string, jobId: string) =>
+    request<{ success: boolean; log: string }>(
+      `/results/${reportId}/runs/${jobId}/output-log`,
+    ),
+  runVizList: (reportId: string, jobId: string) =>
+    request<VizListResponse>(`/results/${reportId}/runs/${jobId}/viz`),
+  runVizUrl: (reportId: string, jobId: string, vizName: string) =>
+    `${BASE}/results/${reportId}/runs/${jobId}/viz/${vizName}`,
 };

@@ -103,7 +103,7 @@ def start_training(
     args["report_uuid"] = request.report_id
     args["disable_model_save"] = False
     args["n_jobs"] = settings.n_jobs
-    args["max_features"] = ["auto", "sqrt"]
+    args["max_features"] = ["sqrt", "log2"]
     args["min_samples_split"] = [2, 5, 10]
     args["min_samples_leaf"] = [1, 2, 4]
     args["bootstrap"] = [True, False]
@@ -178,6 +178,7 @@ async def job_events(
 
     async def event_stream() -> Any:
         last_progress = None
+        last_log_len = -1
         while True:
             # Read current job state
             db_factory = __import__(
@@ -196,18 +197,40 @@ async def job_events(
 
                 progress = read_progress(storage, report_id)
 
-                # Emit event if progress changed
+                # Read live log from storage (written incrementally by jobworker)
+                log_text = ""
+                try:
+                    if storage.exists(f"{report_id}/output_log"):
+                        log_text = storage.get_text(f"{report_id}/output_log")
+                except Exception:
+                    pass
+                log_tail = log_text[-10000:] if len(log_text) > 10000 else log_text
+                log_len = len(log_text)
+
+                # Emit event if progress or log changed, or job is done
                 current = (
                     (progress.completed, progress.total, progress.message) if progress else None
                 )
-                if current != last_progress or state in ("succeeded", "failed"):
+                if (
+                    current != last_progress
+                    or log_len != last_log_len
+                    or state in ("succeeded", "failed")
+                ):
                     last_progress = current
+                    last_log_len = log_len
                     event_data = {
+                        "id": current_job.id,
+                        "report_uuid": current_job.report_uuid,
                         "state": state,
                         "progress": progress.completed if progress else current_job.progress,
-                        "total": progress.total if progress else current_job.progress_total,
-                        "message": progress.message if progress else current_job.progress_message,
+                        "progress_total": progress.total
+                        if progress
+                        else current_job.progress_total,
+                        "progress_message": progress.message
+                        if progress
+                        else current_job.progress_message,
                         "error": current_job.error,
+                        "log": log_tail,
                     }
                     yield f"data: {json.dumps(event_data)}\n\n"
 

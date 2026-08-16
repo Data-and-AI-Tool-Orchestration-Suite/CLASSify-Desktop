@@ -144,6 +144,15 @@ def get_job_by_report(db: Session, report_uuid: str) -> Job | None:
     )
 
 
+def get_previous_job_by_report(db: Session, report_uuid: str, exclude_job_id: str) -> Job | None:
+    """Get the most recent job for a report, excluding the given job id."""
+    return db.scalar(
+        select(Job)
+        .where(Job.report_uuid == report_uuid, Job.id != exclude_job_id)
+        .order_by(desc(Job.created_at))
+    )
+
+
 def get_next_queued_job(db: Session) -> Job | None:
     return db.scalar(select(Job).where(Job.state == "queued").order_by(Job.created_at).limit(1))
 

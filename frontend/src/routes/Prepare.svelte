@@ -12,7 +12,8 @@
   import ColumnPreviewModal from "$lib/components/ColumnPreviewModal.svelte";
   import ClassMappingModal from "$lib/components/ClassMappingModal.svelte";
 
-  let { reportId } = $props<{ reportId: string }>();
+  let { params } = $props<{ params: { reportId?: string } }>();
+  let reportId = $derived(params?.reportId ?? "");
 
   let report = $state<DatasetRow | null>(null);
   let mlOptions = $state<Record<string, any>>({});
@@ -62,6 +63,21 @@
     loading = true;
     try {
       report = await datasetsApi.get(reportId);
+
+      // Load previous training parameters (for rerun)
+      let prevArgs: Record<string, any> | null = null;
+      try {
+        const paramsResp = await datasetsApi.parameters(reportId);
+        if (paramsResp.success && paramsResp.args) {
+          prevArgs = paramsResp.args;
+          if (typeof prevArgs.supervised === "boolean") {
+            supervised = prevArgs.supervised;
+          }
+        }
+      } catch {
+        // No previous params — use defaults
+      }
+
       const options = supervised
         ? await jobsApi.mlOptionsSupervised()
         : await jobsApi.mlOptionsUnsupervised();
@@ -81,6 +97,33 @@
       repeats = (mlOptions.repeats?.default as number) ?? 1;
       randomState = (mlOptions.random_state?.default as number) ?? 42;
       numClusters = (mlOptions.num_clusters?.default as number) ?? 2;
+
+      // Override with previous training args (rerun)
+      if (prevArgs) {
+        if (Array.isArray(prevArgs.train_group)) {
+          trainGroup = [...prevArgs.train_group];
+        }
+        if (typeof prevArgs.parameter_tune === "boolean") parameterTune = prevArgs.parameter_tune;
+        if (typeof prevArgs.shap_feature_explainability === "boolean")
+          shapFeatureExplainability = prevArgs.shap_feature_explainability;
+        if (typeof prevArgs.visualize === "boolean") visualize = prevArgs.visualize;
+        if (typeof prevArgs.standard_scaler === "boolean") standardScaler = prevArgs.standard_scaler;
+        if (typeof prevArgs.test_size === "number") testSize = prevArgs.test_size;
+        if (typeof prevArgs.n_iter === "number") nIter = prevArgs.n_iter;
+        if (typeof prevArgs.folds === "number") folds = prevArgs.folds;
+        if (typeof prevArgs.repeats === "number") repeats = prevArgs.repeats;
+        if (typeof prevArgs.random_state === "number") randomState = prevArgs.random_state;
+        if (typeof prevArgs.num_clusters === "number") numClusters = prevArgs.num_clusters;
+        if (typeof prevArgs.class_column === "string") classColumn = prevArgs.class_column;
+      }
+
+      // Load existing column configuration (if previously saved)
+      const savedChanges = report.column_changes?.changes as ColumnChange[] | undefined;
+      if (savedChanges && Array.isArray(savedChanges) && savedChanges.length > 0) {
+        columnChanges = savedChanges;
+        const classCol = columnChanges.find((c) => c.is_class);
+        if (classCol) classColumn = classCol.column;
+      }
     } catch (e) {
       toasts.error("Failed to load dataset");
       push("/");
@@ -161,7 +204,7 @@
 
       const job = await jobsApi.start(reportId, options);
       toasts.info("Training job submitted...");
-      startJobMonitoring(job.id);
+      startJobMonitoring(job.id, job);
       triggerDatasetRefresh();
       push(`/results/${reportId}`);
     } catch (e) {

@@ -9,10 +9,12 @@ Entry point: ``python -m runner.jobworker <job_id>``
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 # Ensure backend/ is on sys.path
 backend_dir = str(Path(__file__).resolve().parent.parent)
@@ -28,6 +30,33 @@ from ml.column_types import read_csv_from_storage  # noqa: E402
 from runner.cancellation import CancelToken, clear_cancel_flag  # noqa: E402
 from runner.progress import write_progress  # noqa: E402
 from storage.factory import get_storage  # noqa: E402
+
+_RUN_ARTIFACT_SUFFIXES = [
+    "results",
+    "results.json",
+    "output_log",
+    "scaler.joblib",
+    "labeled",
+    "logisticregression_odds_ratio",
+]
+
+
+def _archive_run(storage: Any, report_id: str, prev_job_id: str) -> None:
+    """Copy run-specific artifacts to an archive dir so reruns preserve history."""
+    archive_prefix = f"{report_id}/archive/{prev_job_id}/"
+    all_keys = storage.list(f"{report_id}/")
+    for key in all_keys:
+        if key.startswith(archive_prefix):
+            continue
+        suffix = key[len(f"{report_id}/") :]
+        is_run_artifact = (
+            suffix in _RUN_ARTIFACT_SUFFIXES
+            or suffix.endswith("_model.joblib")
+            or suffix.startswith("shap_rows_")
+            or suffix.startswith("viz/")
+        )
+        if is_run_artifact:
+            storage.copy(key, f"{archive_prefix}{suffix}")
 
 
 def run_job(job_id: str) -> int:
@@ -56,6 +85,11 @@ def run_job(job_id: str) -> int:
 
         storage = get_storage()
 
+        # Archive previous run's artifacts if they exist (preserves run history)
+        prev_job = repo.get_previous_job_by_report(db, report_id, job_id)
+        if prev_job and storage.exists(f"{report_id}/results"):
+            _archive_run(storage, report_id, prev_job.id)
+
         # Read the processed dataset
         try:
             df = read_csv_from_storage(storage, f"{report_id}/file", index_col="index")
@@ -73,17 +107,26 @@ def run_job(job_id: str) -> int:
         # Create cancel token
         cancel_token = CancelToken(storage, report_id)
 
+        # Reset progress from any previous run
+        write_progress(storage, report_id, 0, 0, "Starting...")
+        repo.update_job_progress(db, job_id, 0, 0, "Starting...")
+        db.commit()
+
+        # Also clear the output log from any previous run
+        log_lines: list[str] = []
+        storage.put_text(f"{report_id}/output_log", "")
+
         # Progress callback
         def on_progress(completed: int, total: int, message: str) -> None:
             write_progress(storage, report_id, completed, total, message)
             repo.update_job_progress(db, job_id, completed, total, message)
             db.commit()
 
-        # Log callback
-        log_lines: list[str] = []
-
+        # Log callback — writes incrementally to storage for live streaming
         def on_log(msg: str) -> None:
             log_lines.append(msg)
+            with contextlib.suppress(Exception):
+                storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
 
         # Run the trainer
         from ml.engine import trainer

@@ -76,7 +76,7 @@ def _get_estimator(emethod: str, args: Any, params: dict[str, Any] | None = None
     elif emethod == "bagging":
         return BaggingClassifier(random_state=args.random_state, n_jobs=n_jobs, **params)
     elif emethod == "sgdclassifier":
-        return SGDClassifier(random_state=args.random_state, **params)
+        return SGDClassifier(random_state=args.random_state, loss="log_loss", **params)
     elif emethod == "logisticregression":
         return LogisticRegression(random_state=args.random_state, max_iter=1000, **params)
     elif emethod == "kneighbors":
@@ -307,6 +307,8 @@ def estimator_evaluation(
                         trt_kappa,
                         trt_npv,
                         trt_ppv,
+                        _trt_fpr,
+                        _trt_tpr,
                         trt_f1score,
                     ) = train_results
                 except Exception as e:
@@ -470,7 +472,7 @@ def write_report(
 
     models_to_skip = []
     for model in model_results:
-        if model["results"].get("best_score") == -1:
+        if not model["results"].get("test_auc") or model["results"].get("best_score") == -1:
             models_to_skip.append(model["model"])
         if not args.parameter_tune:
             model["results"].pop("best_score", None)
@@ -490,11 +492,12 @@ def write_report(
         line = model_stats["model"] + "," + column_key
         for results_name in results_list:
             if results_name == "labels":
-                result = str(model_stats["results"][results_name]).replace(",", "")
+                result = str(model_stats["results"].get(results_name, "")).replace(",", "")
             elif results_name[:3] != "cvt":
-                result = str(round(float(model_stats["results"][results_name]), 3))
+                val = model_stats["results"].get(results_name, -1)
+                result = str(round(float(val), 3))
             else:
-                val = model_stats["results"][results_name]
+                val = str(model_stats["results"].get(results_name, "-1 ± -1"))
                 if val[:3] == "-1":
                     result = "-1 ± -1"
                 else:

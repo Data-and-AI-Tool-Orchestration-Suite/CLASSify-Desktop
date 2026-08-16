@@ -93,7 +93,7 @@ def compute_shap(
 
         fig, ax = plt.subplots(figsize=(10, 8))
         max_display = min(args.shap_diagram_features, len(all_columns))
-        shap.plots.beeswarm(shap_values, max_display=max_display, show=False, ax=ax)
+        shap.plots.beeswarm(shap_values, max_display=max_display, show=False, ax=ax, plot_size=None)
         plt.title(model_name)
         buf2 = io.BytesIO()
         fig.savefig(buf2, format="png", bbox_inches="tight")

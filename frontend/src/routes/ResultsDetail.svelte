@@ -6,11 +6,13 @@
     datasets as datasetsApi,
     system,
     type DatasetRow,
+    type RunInfo,
   } from "$lib/api/client";
-  import { toasts, currentJob, jobPolling, cancelJob } from "$lib/stores/app";
+  import { toasts, currentJob, jobPolling, liveLog, cancelJob } from "$lib/stores/app";
   import JobProgress from "$lib/components/JobProgress.svelte";
 
-  let { reportId } = $props<{ reportId: string }>();
+  let { params } = $props<{ params: { reportId?: string } }>();
+  let reportId = $derived(params?.reportId ?? "");
 
   let report = $state<DatasetRow | null>(null);
   let loading = $state(true);
@@ -29,13 +31,40 @@
   let metricDefs = $state<Record<string, string>>({});
   let shapColumns = $state<string[]>([]);
 
+  // Run history
+  let runs = $state<RunInfo[]>([]);
+  let selectedRunId = $state<string | null>(null);
+  let selectedRunIsCurrent = $state(true);
+
+  let selectedRun = $derived(runs.find((r) => r.job_id === selectedRunId) ?? null);
+
   async function loadAll() {
     loading = true;
     try {
       report = await datasetsApi.get(reportId);
 
+      // If the job just finished but the report status hasn't updated yet,
+      // wait briefly and retry
+      if (report.status === "Processing" && !jobActive) {
+        await new Promise((r) => setTimeout(r, 1500));
+        report = await datasetsApi.get(reportId);
+      }
+
+      // Load run history
+      try {
+        const runsResp = await resultsApi.listRuns(reportId);
+        runs = runsResp.runs;
+        const currentRun = runs.find((r) => r.is_current);
+        if (currentRun) {
+          selectedRunId = currentRun.job_id;
+          selectedRunIsCurrent = true;
+        }
+      } catch {
+        // No run history
+      }
+
       if (report.status === "Processed") {
-        await Promise.all([loadResults(), loadViz(), loadLog(), loadMetricDefs()]);
+        await Promise.all([loadRunData(), loadMetricDefs()]);
       }
     } catch {
       toasts.error("Failed to load results");
@@ -45,16 +74,25 @@
     }
   }
 
+  async function loadRunData() {
+    await Promise.all([loadResults(), loadViz(), loadLog()]);
+  }
+
   async function loadResults() {
     try {
-      const resp = await resultsApi.get(reportId);
+      const resp = selectedRunIsCurrent
+        ? await resultsApi.get(reportId)
+        : selectedRunId
+          ? await resultsApi.runResults(reportId, selectedRunId)
+          : await resultsApi.get(reportId);
       if (resp.success) {
         resultsData = { rows: resp.report_csv, columns: resp.columns };
-        // Detect models with SHAP data
         shapModels = resp.report_csv
           .map((r) => r.model as string)
           .filter((m) => m && m !== "kmeans" && m !== "spectralclustering" && m !== "hdbscan");
         if (shapModels.length > 0) shapModel = shapModels[0];
+      } else {
+        resultsData = { rows: [], columns: [] };
       }
     } catch {
       // Results not available yet
@@ -63,19 +101,27 @@
 
   async function loadViz() {
     try {
-      const resp = await resultsApi.vizList(reportId);
+      const resp = selectedRunIsCurrent
+        ? await resultsApi.vizList(reportId)
+        : selectedRunId
+          ? await resultsApi.runVizList(reportId, selectedRunId)
+          : await resultsApi.vizList(reportId);
       vizList = resp.visualizations;
     } catch {
-      // No visualizations
+      vizList = [];
     }
   }
 
   async function loadLog() {
     try {
-      const resp = await resultsApi.outputLog(reportId);
+      const resp = selectedRunIsCurrent
+        ? await resultsApi.outputLog(reportId)
+        : selectedRunId
+          ? await resultsApi.runOutputLog(reportId, selectedRunId)
+          : await resultsApi.outputLog(reportId);
       outputLog = resp.log;
     } catch {
-      // No log
+      outputLog = "";
     }
   }
 
@@ -104,19 +150,88 @@
     loadAll();
   });
 
+  let jobActive = $derived.by(() => {
+    const job = $currentJob;
+    return (
+      $jobPolling &&
+      job !== null &&
+      job.report_uuid === reportId &&
+      job.state !== "succeeded" &&
+      job.state !== "failed"
+    );
+  });
+
+  let wasJobActive = false;
+
+  $effect(() => {
+    const active = jobActive;
+    if (wasJobActive && !active) {
+      loadAll();
+    }
+    wasJobActive = active;
+  });
+
   $effect(() => {
     if (activeTab === "shap" && shapModel) {
       loadShapRows();
     }
   });
 
+  function handleRunChange() {
+    selectedRunIsCurrent = selectedRun?.is_current ?? true;
+    resultsData = { rows: [], columns: [] };
+    vizList = [];
+    outputLog = "";
+    shapRows = [];
+    shapColumns = [];
+    if (report?.status === "Processed") {
+      loadRunData();
+    }
+  }
+
   function download(suffix: string, _label: string) {
     window.open(resultsApi.downloadUrl(reportId, suffix), "_blank");
   }
 
   function vizImgUrl(name: string): string {
-    return resultsApi.vizUrl(reportId, name);
+    if (selectedRunIsCurrent || !selectedRunId) {
+      return resultsApi.vizUrl(reportId, name);
+    }
+    return resultsApi.runVizUrl(reportId, selectedRunId, name);
   }
+
+  function formatDate(iso: string | null): string {
+    if (!iso) return "unknown date";
+    return new Date(iso).toLocaleString();
+  }
+
+  let logCopied = $state(false);
+
+  async function copyLog() {
+    if (!outputLog) return;
+    try {
+      await navigator.clipboard.writeText(outputLog);
+      logCopied = true;
+      setTimeout(() => (logCopied = false), 2000);
+    } catch {
+      toasts.error("Failed to copy log to clipboard");
+    }
+  }
+
+  let liveLogEl = $state<HTMLPreElement | null>(null);
+
+  let lightboxViz = $state<string | null>(null);
+
+  function vizDownloadUrl(name: string): string {
+    return resultsApi.downloadUrl(reportId, `viz/${name}`);
+  }
+
+  $effect(() => {
+    $liveLog;
+    if (liveLogEl) {
+      liveLogEl.scrollTop = liveLogEl.scrollHeight;
+    }
+  });
 </script>
 
 {#if loading}
@@ -139,21 +254,83 @@
         {report.status}
       </span>
     </div>
-    <a href="#/results" class="btn btn-outline-secondary btn-sm">Back to Results</a>
+    <div class="d-flex gap-2">
+      {#if report.status === "Processed" || report.status === "Failed"}
+        <a href={`#/prepare/${reportId}`} class="btn btn-outline-primary btn-sm">
+          Edit Settings &amp; Rerun
+        </a>
+      {/if}
+      <a href="#/results" class="btn btn-outline-secondary btn-sm">Back to Results</a>
+    </div>
   </div>
+
+  <!-- Run history selector -->
+  {#if runs.length > 1 && report.status === "Processed"}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <label class="form-label mb-0 text-muted small fw-bold" for="run-select">Run:</label>
+      <select
+        id="run-select"
+        class="form-select form-select-sm"
+        style="max-width: 350px;"
+        bind:value={selectedRunId}
+        onchange={handleRunChange}
+      >
+        {#each runs as run}
+          <option value={run.job_id}>
+            {run.is_current ? "Latest" : "Archived"} — {formatDate(run.created_at)}
+            {#if run.args?.train_group}
+              ({Array.isArray(run.args.train_group) ? run.args.train_group.join(", ") : run.args.train_group})
+            {/if}
+          </option>
+        {/each}
+      </select>
+      {#if selectedRun && !selectedRun.is_current}
+        <span class="badge bg-secondary">viewing archived run</span>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Job progress (if processing) -->
   {#if $jobPolling && $currentJob?.report_uuid === reportId}
     <JobProgress job={$currentJob} oncancel={() => cancelJob($currentJob!.id)} />
   {/if}
 
-  {#if report.status === "Processing"}
-    <div class="alert alert-warning">
+  {#if jobActive}
+    <div class="alert alert-warning mb-3">
+      <div class="spinner-border spinner-border-sm me-2"></div>
+      {#if $currentJob?.state === "queued"}
+        Job queued — waiting to start...
+      {:else}
+        Training in progress... This page will update automatically when complete.
+      {/if}
+    </div>
+    {#if $liveLog}
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <h6 class="mb-0 text-muted">Live Output</h6>
+          <span class="badge bg-warning text-dark">streaming</span>
+        </div>
+        <pre
+          bind:this={liveLogEl}
+          class="bg-dark text-light p-3 rounded"
+          style="max-height: 400px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; user-select: text; cursor: text;">{$liveLog}</pre>
+      </div>
+    {:else}
+      <div class="text-center py-3">
+        <div class="spinner-border spinner-border-sm me-2"></div>
+        <span class="text-muted">Waiting for output...</span>
+      </div>
+    {/if}
+  {:else if report.status === "Processing"}
+    <div class="alert alert-warning mb-3">
       <div class="spinner-border spinner-border-sm me-2"></div>
       Training in progress... This page will update automatically when complete.
     </div>
   {:else if report.status === "Failed"}
-    <div class="alert alert-danger">Training failed. Check the Output Log tab for details.</div>
+    <div class="alert alert-danger">
+      Training failed. Check the Output Log tab for details.
+      <a href={`#/prepare/${reportId}`} class="alert-link">Edit settings and rerun</a>.
+    </div>
   {:else if report.status === "Preview" || report.status === "Uploaded"}
     <div class="alert alert-info">
       This dataset hasn't been trained yet.
@@ -241,10 +418,31 @@
         <div class="row g-3">
           {#each vizList as viz}
             <div class="col-md-6 col-lg-4">
-              <div class="card">
-                <img src={vizImgUrl(viz)} class="card-img-top" alt={viz} loading="lazy" />
-                <div class="card-body p-2">
-                  <p class="card-text text-center small text-muted mb-0">{viz}</p>
+              <div class="card h-100">
+                <button
+                  type="button"
+                  class="btn p-0 border-0"
+                  onclick={() => (lightboxViz = viz)}
+                  title="Click to enlarge"
+                >
+                  <img
+                    src={vizImgUrl(viz)}
+                    class="card-img-top"
+                    alt={viz}
+                    loading="lazy"
+                    style="cursor: zoom-in;"
+                  />
+                </button>
+                <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                  <p class="card-text small text-muted mb-0 text-truncate">{viz}</p>
+                  <a
+                    href={vizDownloadUrl(viz)}
+                    class="btn btn-outline-secondary btn-sm ms-2 flex-shrink-0"
+                    title="Download PNG"
+                    download
+                  >
+                    Download
+                  </a>
                 </div>
               </div>
             </div>
@@ -367,10 +565,64 @@
 
     <!-- Output Log -->
     {#if activeTab === "log"}
+      <div class="d-flex justify-content-end mb-2">
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          onclick={copyLog}
+          disabled={!outputLog}
+        >
+          {#if logCopied}
+            Copied!
+          {:else}
+            Copy to Clipboard
+          {/if}
+        </button>
+      </div>
       <pre
         class="bg-dark text-light p-3 rounded"
-        style="max-height: 600px; overflow-y: auto; font-size: 0.85rem;">{outputLog ||
+        style="max-height: 600px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; user-select: text; cursor: text;">{outputLog ||
           "No output log available."}</pre>
     {/if}
   {/if}
+{/if}
+
+{#if lightboxViz}
+  <div
+    class="modal-backdrop fade show"
+    onclick={() => (lightboxViz = null)}
+    onkeydown={(e) => e.key === "Escape" && (lightboxViz = null)}
+    role="presentation"
+  ></div>
+  <div class="modal fade show d-block" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title text-truncate">{lightboxViz}</h5>
+          <div class="d-flex align-items-center gap-2">
+            <a
+              href={vizDownloadUrl(lightboxViz)}
+              class="btn btn-outline-secondary btn-sm"
+              download
+            >
+              Download
+            </a>
+            <button
+              type="button"
+              class="btn-close"
+              onclick={() => (lightboxViz = null)}
+              aria-label="Close"
+            ></button>
+          </div>
+        </div>
+        <div class="modal-body text-center p-2">
+          <img
+            src={vizImgUrl(lightboxViz)}
+            class="img-fluid rounded"
+            alt={lightboxViz}
+            style="max-height: 80vh;"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
 {/if}

@@ -57,12 +57,27 @@ class DatasetUploadResponse(BaseModel):
     message: str | None = None
 
 
+class ColumnTypesResponse(BaseModel):
+    """GET /api/datasets/{id}/column-types."""
+
+    success: bool
+    data_types: dict[str, str] = Field(default_factory=dict)
+    missing_values: dict[str, bool] = Field(default_factory=dict)
+
+
 class ColumnChangesResponse(BaseModel):
     """Response for column-changes endpoint."""
 
     success: bool
     message: str = ""
     data_types: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ParametersResponse(BaseModel):
+    """GET /api/datasets/{id}/parameters — previous training args."""
+
+    success: bool
+    args: dict[str, Any] | None = None
 
 
 class ClassValuesResponse(BaseModel):

@@ -21,9 +21,11 @@ from classify_api.schemas.datasets import (
     ClassValuesResponse,
     ColumnChangesRequest,
     ColumnChangesResponse,
+    ColumnTypesResponse,
     CommentUpdate,
     DatasetListResponse,
     DatasetUploadResponse,
+    ParametersResponse,
     SuccessResponse,
 )
 from classify_api.settings import Settings, get_settings
@@ -121,7 +123,38 @@ async def upload_dataset(
     )
 
 
-# ── E2: Column changes ──
+# ── E2: Column types ──
+
+
+@router.get("/{report_id}/column-types", response_model=ColumnTypesResponse)
+def get_column_types(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> ColumnTypesResponse:
+    """Re-detect column types from the stored original dataset."""
+    _get_report_or_404(db, report_id)
+
+    storage = get_storage()
+    key = f"{report_id}/original_file"
+    if not storage.exists(key):
+        key = f"{report_id}/file"
+    try:
+        raw = storage.get_bytes(key)
+        encoding = detect_encoding(raw)
+        df = pd.read_csv(StringIO(raw.decode(encoding)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}") from e
+
+    result = get_column_types_internal(df.copy())
+
+    return ColumnTypesResponse(
+        success=True,
+        data_types=result.data_types,
+        missing_values=result.missing_values,
+    )
+
+
+# ── E3: Column changes ──
 
 
 @router.post("/{report_id}/column-changes", response_model=ColumnChangesResponse)
@@ -134,8 +167,11 @@ def column_changes(
     _get_report_or_404(db, report_id)
 
     storage = get_storage()
+    key = f"{report_id}/original_file"
+    if not storage.exists(key):
+        key = f"{report_id}/file"
     try:
-        raw = storage.get_bytes(f"{report_id}/file")
+        raw = storage.get_bytes(key)
         encoding = detect_encoding(raw)
         df = pd.read_csv(StringIO(raw.decode(encoding)))
     except Exception as e:
@@ -379,6 +415,22 @@ def update_comment(
 
 
 # ── E10: Get single dataset ──
+
+
+@router.get("/{report_id}/parameters", response_model=ParametersResponse)
+def get_parameters(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> ParametersResponse:
+    """Get the previous training parameters for a dataset (for rerun)."""
+    _get_report_or_404(db, report_id)
+    job = repo.get_job_by_report(db, report_id)
+    if job is None or job.args is None:
+        return ParametersResponse(success=False, args=None)
+    return ParametersResponse(success=True, args=job.args)
+
+
+# ── E11: Get single dataset ──
 
 
 @router.get("/{report_id}", response_model=dict)

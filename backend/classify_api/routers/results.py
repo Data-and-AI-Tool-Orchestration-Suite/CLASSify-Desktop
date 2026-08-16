@@ -22,6 +22,8 @@ from classify_api.schemas.results import (
     ResultsResponse,
     RetestRequest,
     RetestResponse,
+    RunInfo,
+    RunListResponse,
     ShapRowsResponse,
     VizListResponse,
 )
@@ -315,3 +317,160 @@ def get_prepare_params(
         parameters=args,
         class_column=class_column,
     )
+
+
+# ── G9: Run history ──
+
+
+def _archive_prefix(report_id: str, job_id: str) -> str:
+    return f"{report_id}/archive/{job_id}/"
+
+
+@router.get("/{report_id}/runs", response_model=RunListResponse)
+def list_runs(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> RunListResponse:
+    """List all training runs (current + archived) for a dataset."""
+    _get_report_or_404(db, report_id)
+
+    storage = get_storage()
+    current_job = repo.get_job_by_report(db, report_id)
+    current_job_id = current_job.id if current_job else None
+
+    runs: list[RunInfo] = []
+
+    all_jobs = (
+        db.query(repo.Job)
+        .filter(repo.Job.report_uuid == report_id)
+        .order_by(repo.Job.created_at.desc())
+        .all()
+    )
+
+    for job in all_jobs:
+        is_current = job.id == current_job_id
+        if is_current:
+            has_artifacts = storage.exists(f"{report_id}/results")
+        else:
+            has_artifacts = storage.exists(f"{_archive_prefix(report_id, job.id)}results")
+
+        if not has_artifacts and job.state not in ("succeeded", "failed"):
+            continue
+
+        runs.append(
+            RunInfo(
+                job_id=job.id,
+                state=job.state,
+                created_at=job.created_at.isoformat() if job.created_at else None,
+                is_current=is_current,
+                args=job.args,
+            )
+        )
+
+    return RunListResponse(success=True, runs=runs)
+
+
+@router.get("/{report_id}/runs/{job_id}/results", response_model=ResultsResponse)
+def get_run_results(
+    report_id: str,
+    job_id: str,
+    db: Session = Depends(get_session),
+) -> ResultsResponse:
+    """Get results table for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+    storage = get_storage()
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_job_by_report(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+
+    try:
+        df: pd.DataFrame = storage.read_csv(f"{prefix}/results")
+    except KeyNotFound:
+        return ResultsResponse(success=False)
+
+    columns = df.columns.tolist()
+    rows = df.to_dict(orient="records")
+
+    return ResultsResponse(success=True, report_csv=rows, columns=columns)
+
+
+@router.get("/{report_id}/runs/{job_id}/output-log", response_model=OutputLogResponse)
+def get_run_output_log(
+    report_id: str,
+    job_id: str,
+    db: Session = Depends(get_session),
+) -> OutputLogResponse:
+    """Get output log for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+    storage = get_storage()
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_job_by_report(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+
+    try:
+        log_text = storage.get_text(f"{prefix}/output_log")
+    except KeyNotFound:
+        return OutputLogResponse(success=False, log="")
+
+    return OutputLogResponse(success=True, log=log_text)
+
+
+@router.get("/{report_id}/runs/{job_id}/viz", response_model=VizListResponse)
+def list_run_visualizations(
+    report_id: str,
+    job_id: str,
+    db: Session = Depends(get_session),
+) -> VizListResponse:
+    """List visualizations for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+    storage = get_storage()
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_job_by_report(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+
+    viz_keys = storage.list(f"{prefix}/viz/")
+    viz_names = [k.split("viz/")[-1] for k in viz_keys]
+
+    return VizListResponse(success=True, visualizations=viz_names)
+
+
+@router.get("/{report_id}/runs/{job_id}/viz/{viz_name}")
+def get_run_visualization(
+    report_id: str,
+    job_id: str,
+    viz_name: str,
+    db: Session = Depends(get_session),
+) -> StreamingResponse:
+    """Serve a visualization PNG for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+    storage = get_storage()
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_job_by_report(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+
+    try:
+        png_bytes = storage.get_bytes(f"{prefix}/viz/{viz_name}")
+    except KeyNotFound:
+        raise HTTPException(status_code=404, detail="Visualization not found") from None
+
+    return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")

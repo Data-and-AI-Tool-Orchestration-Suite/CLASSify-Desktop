@@ -3,7 +3,11 @@
  */
 
 import { writable, type Writable } from "svelte/store";
-import { jobs as jobsApi, type JobResponse } from "$lib/api/client";
+import {
+  jobs as jobsApi,
+  results as resultsApi,
+  type JobResponse,
+} from "$lib/api/client";
 
 // ── Toast store ──
 
@@ -48,13 +52,17 @@ export const toasts = createToastStore();
 
 export const currentJob: Writable<JobResponse | null> = writable(null);
 export const jobPolling: Writable<boolean> = writable(false);
+export const liveLog: Writable<string> = writable("");
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let sseSource: EventSource | null = null;
 
-export function startJobMonitoring(jobId: string) {
+export function startJobMonitoring(jobId: string, initialJob?: JobResponse) {
   stopJobMonitoring();
   jobPolling.set(true);
+  if (initialJob) {
+    currentJob.set(initialJob);
+  }
 
   // SSE for live progress
   sseSource = new EventSource(jobsApi.sseUrl(jobId));
@@ -62,6 +70,9 @@ export function startJobMonitoring(jobId: string) {
     try {
       const data = JSON.parse(event.data);
       currentJob.set(data);
+      if (data.log !== undefined) {
+        liveLog.set(data.log);
+      }
       if (data.state === "succeeded") {
         toasts.success("Training completed successfully!");
         stopJobMonitoring();
@@ -84,6 +95,14 @@ export function startJobMonitoring(jobId: string) {
         try {
           const job = await jobsApi.get(jobId);
           currentJob.set(job);
+          if (job.report_uuid) {
+            try {
+              const logResp = await resultsApi.outputLog(job.report_uuid);
+              liveLog.set(logResp.log);
+            } catch {
+              // Log not available yet
+            }
+          }
           if (job.state === "succeeded" || job.state === "failed") {
             stopJobMonitoring();
           }
@@ -97,6 +116,7 @@ export function startJobMonitoring(jobId: string) {
 
 export function stopJobMonitoring() {
   jobPolling.set(false);
+  liveLog.set("");
   if (sseSource) {
     sseSource.close();
     sseSource = null;

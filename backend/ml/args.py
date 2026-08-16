@@ -138,7 +138,7 @@ class TrainingArgs:
     affinity_method: list[str] = field(default_factory=lambda: ["rbf", "nearest_neighbors"])
 
     # Fixed arrays used internally by the engine
-    max_features: list[str] = field(default_factory=lambda: ["auto", "sqrt"])
+    max_features: list[str] = field(default_factory=lambda: ["sqrt", "log2"])
     min_samples_split: list[int] = field(default_factory=lambda: [2, 5, 10])
     min_samples_leaf: list[int] = field(default_factory=lambda: [1, 2, 4])
     bootstrap: list[bool] = field(default_factory=lambda: [True, False])

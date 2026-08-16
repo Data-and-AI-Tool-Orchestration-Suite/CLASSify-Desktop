@@ -141,7 +141,7 @@ def get_supervised_options() -> dict[str, Any]:
         },
         "max_features": {
             "type": "list",
-            "default": ["auto", "sqrt"],
+            "default": ["sqrt", "log2"],
             "models": ["randomforest"],
             "help": "Number of features to consider for best split",
         },

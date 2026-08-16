@@ -58,3 +58,20 @@ class PrepareParamsResponse(BaseModel):
     success: bool
     parameters: dict[str, Any] | None = None
     class_column: str | None = None
+
+
+class RunInfo(BaseModel):
+    """A single training run (current or archived)."""
+
+    job_id: str
+    state: str
+    created_at: str | None = None
+    is_current: bool = False
+    args: dict[str, Any] | None = None
+
+
+class RunListResponse(BaseModel):
+    """GET /api/results/{report_id}/runs."""
+
+    success: bool
+    runs: list[RunInfo] = Field(default_factory=list)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "classify-desktop"
-version = "1.0.0.dev0"
+version = "1.0.0"
 description = "CLASSify Desktop — local-first ML classification training app"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

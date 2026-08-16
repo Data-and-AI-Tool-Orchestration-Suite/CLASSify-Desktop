@@ -20,13 +20,16 @@
   async function loadColumnTypes() {
     loading = true;
     try {
-      // Re-upload is not needed — we get types from the upload response
-      // But if we're revisiting, we need to re-read the file. For now,
-      // we'll fetch by re-uploading (the web app does the same).
-      // Actually, the API stores the file on upload. We need a way to
-      // get column types without re-uploading. Let's add an endpoint later.
-      // For now, we'll initialize from defaults.
-      changes = [];
+      const resp = await datasetsApi.columnTypes(reportId);
+      originalMissing = resp.missing_values;
+      changes = Object.entries(resp.data_types).map(([col, type]) => ({
+        column: col,
+        data_type: type,
+        checked: true,
+        missing: resp.missing_values[col] ? "drop" : "",
+        fill_value: "",
+        is_class: false,
+      }));
     } catch (e) {
       toasts.error("Failed to load column types");
     } finally {
@@ -62,19 +65,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  export function setColumns(types: Record<string, string>, missing: Record<string, boolean>) {
-    originalMissing = missing;
-    changes = Object.entries(types).map(([col, type]) => ({
-      column: col,
-      data_type: type,
-      checked: true,
-      missing: missing[col] ? "drop" : "",
-      fill_value: "",
-      is_class: false,
-    }));
-    loading = false;
   }
 </script>
 

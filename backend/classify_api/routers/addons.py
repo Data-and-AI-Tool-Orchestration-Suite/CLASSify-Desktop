@@ -15,6 +15,7 @@ from classify_api.schemas.addons import (
 from classify_api.services.addon_service import (
     BUILTIN_ADDONS,
     get_addon_status,
+    get_install_status,
     install_addon,
     list_available_addons,
     uninstall_addon,
@@ -57,9 +58,19 @@ def addon_status(name: str) -> AddonStatusResponse:
 
 @router.post("/{name}/install", response_model=AddonInstallResponse)
 def install_addon_endpoint(name: str) -> AddonInstallResponse:
-    """Install an add-on (downloads torch + deps — may take several minutes)."""
+    """Start an add-on installation (runs in background — poll install-status)."""
+    if name not in BUILTIN_ADDON_NAMES:
+        raise HTTPException(status_code=404, detail=f"Unknown add-on: {name}")
     result = install_addon(name)
     return AddonInstallResponse(success=result["success"], message=result["message"])
+
+
+@router.get("/{name}/install-status")
+def install_status(name: str) -> dict[str, Any]:
+    """Poll the live status of an in-progress add-on installation."""
+    if name not in BUILTIN_ADDON_NAMES:
+        raise HTTPException(status_code=404, detail=f"Unknown add-on: {name}")
+    return get_install_status(name)
 
 
 @router.post("/{name}/uninstall", response_model=AddonInstallResponse)

@@ -141,20 +141,28 @@ class TestAddonInstallMocked:
 
     def test_install_addon_mocked_pip(self, tmp_data_dir: object) -> None:
         """Mock pip to test the install flow without downloading torch."""
-        from classify_api.services.addon_service import install_addon
+        from classify_api.services import addon_service
+        from classify_api.services.addon_service import _run_install, get_install_status
 
         _setup(tmp_data_dir)
 
-        # Mock subprocess.run to simulate successful pip install
+        # Set up initial status (normally done by install_addon)
+        addon_service._install_status["tabpfn"] = addon_service.InstallStatus(
+            addon="tabpfn", state="installing", progress=[]
+        )
+
         mock_result = type("MockResult", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
-        with patch("subprocess.run", return_value=mock_result), patch("builtins.__import__"):
-            result = install_addon("tabpfn", on_progress=lambda msg: None)
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch.object(addon_service, "_verify_in_subprocess", return_value=(True, None)),
+            patch.object(addon_service, "_clear_addon_dir", return_value=True),
+        ):
+            _run_install("tabpfn")
 
-        # Even with mocked pip, the import check may fail — that's OK for this test
-        # We just verify the flow doesn't crash
-        assert "success" in result
-        assert "message" in result
+        status = get_install_status("tabpfn")
+        assert status["state"] == "succeeded"
+        assert len(status["progress"]) > 0
 
     def test_manual_registry_write_read(self, tmp_data_dir: object) -> None:
         """Test the installed.json registry by writing and reading it directly."""
