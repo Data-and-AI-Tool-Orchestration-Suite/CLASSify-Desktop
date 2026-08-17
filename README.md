@@ -81,11 +81,11 @@ make ci   # lint + typecheck + test (backend + frontend)
 
 ## Acknowledgements
 
-CLASSify Desktop was developed at the **University of Kentucky**.
+CLASSify Desktop was developed at the **Center for Applied AI at the University of Kentucky**.
 
 ### Lead Developer
 
-**Aaron D. Mullen** — [University of Kentucky, Lexington, KY, USA](https://www.uky.edu)
+**Aaron D. Mullen** — [LinkedIn](https://www.linkedin.com/in/aaron-mullen-5706761b8)
 
 ### Publication
 
