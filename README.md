@@ -79,6 +79,31 @@ npm run dev
 make ci   # lint + typecheck + test (backend + frontend)
 ```
 
+## Acknowledgements
+
+CLASSify Desktop was developed at the **University of Kentucky**.
+
+### Lead Developer
+
+**Aaron D. Mullen** — [University of Kentucky, Lexington, KY, USA](https://www.uky.edu)
+
+### Publication
+
+This work is described in:
+
+> Mullen AD, Armstrong SE, Talbert J, Bumgardner VKC. **CLASSify: A Web-Based Tool for Machine Learning.** *AMIA Jt Summits Transl Sci Proc.* 2024 May 31;2024:364–373. PMID: 38827105.
+>
+> [https://pmc.ncbi.nlm.nih.gov/articles/PMC11141843/](https://pmc.ncbi.nlm.nih.gov/articles/PMC11141843/)
+
+If you use CLASSify in your research, please cite the publication above.
+
+### Funding & Support
+
+This project was supported by:
+
+- **University of Kentucky Center for Clinical and Translational Science (CCTS)** — NIH Clinical and Translational Science Award (CTSA) grant [UL1TR001998](https://reporter.nih.gov/search/EW3ePp7pbU2r6Q1Y5mWRYg/project-details/10548576)
+- **University of Kentucky College of Medicine Office of Research**
+
 ## License
 
 GPL-3.0-or-later (inherited from CLASSify-2).

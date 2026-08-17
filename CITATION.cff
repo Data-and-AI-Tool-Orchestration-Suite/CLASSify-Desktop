@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+message: "If you use CLASSify in your research, please cite the publication below."
+title: "CLASSify Desktop — Local-first ML classification training app"
+version: "1.0.0"
+date-released: "2026-08-16"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop"
+keywords:
+  - machine-learning
+  - classification
+  - synthetic-data
+  - shap
+  - explainable-ai
+  - desktop-application
+authors:
+  - given-names: "Aaron D."
+    family-names: "Mullen"
+    affiliation: "University of Kentucky, Lexington, KY, USA"
+  - given-names: "Samuel E."
+    family-names: "Armstrong"
+    affiliation: "University of Kentucky, Lexington, KY, USA"
+  - given-names: "Jeff"
+    family-names: "Talbert"
+    affiliation: "University of Kentucky, Lexington, KY, USA"
+  - given-names: "V. K. Cody"
+    family-names: "Bumgardner"
+    affiliation: "University of Kentucky, Lexington, KY, USA"
+preferred-citation:
+  type: proceedings
+  title: "CLASSify: A Web-Based Tool for Machine Learning"
+  authors:
+    - given-names: "Aaron D."
+      family-names: "Mullen"
+      affiliation: "University of Kentucky, Lexington, KY, USA"
+    - given-names: "Samuel E."
+      family-names: "Armstrong"
+      affiliation: "University of Kentucky, Lexington, KY, USA"
+    - given-names: "Jeff"
+      family-names: "Talbert"
+      affiliation: "University of Kentucky, Lexington, KY, USA"
+    - given-names: "V. K. Cody"
+      family-names: "Bumgardner"
+      affiliation: "University of Kentucky, Lexington, KY, USA"
+  conference:
+    name: "AMIA Summits on Translational Science Proceedings"
+  year: 2024
+  pages: "364-373"
+  identifiers:
+    - type: pmid
+      value: "38827105"
+    - type: pmcid
+      value: "PMC11141843"
+    - type: url
+      value: "https://pmc.ncbi.nlm.nih.gov/articles/PMC11141843/"
+acknowledgements: >-
+  This project was supported by the University of Kentucky Center for Clinical
+  and Translational Science (CCTS) — NIH Clinical and Translational Science
+  Award (CTSA) grant UL1TR001998 — and the University of Kentucky College of
+  Medicine Office of Research.
