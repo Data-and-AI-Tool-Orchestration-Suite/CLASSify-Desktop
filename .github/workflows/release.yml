@@ -197,7 +197,7 @@ jobs:
           RELEASE_NOTES: ${{ needs.build-windows.outputs.release_notes }}
         run: |
           REPO="${{ github.repository }}"
-          python -c "
+          python3 -c "
           import json, datetime
           manifest = {
               'version': '${{ github.ref_name }}'.lstrip('v'),
