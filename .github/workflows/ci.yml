@@ -61,7 +61,7 @@ jobs:
       - run: pytest tests/backend -m "not ml_regression and not addon and not e2e"
         env:
           MPLBACKEND: Agg
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         if: matrix.os == 'ubuntu-latest'
         with:
           files: ./coverage.xml
@@ -80,7 +80,7 @@ jobs:
         run: |
           npm ci
           npm test
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with:
           directory: frontend/coverage
 
