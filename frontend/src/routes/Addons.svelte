@@ -125,6 +125,8 @@
   <strong>About Add-ons</strong><br />
   Add-ons provide optional ML capabilities that require large dependencies (torch ~2GB). They are not
   included in the base installer. Install them on demand — all data stays local.
+  <strong>torch is downloaded once and shared between add-ons</strong> — the second add-on only
+  downloads its own packages, and wheels are cached so reinstalls don't re-download either.
 </div>
 
 {#if loading}

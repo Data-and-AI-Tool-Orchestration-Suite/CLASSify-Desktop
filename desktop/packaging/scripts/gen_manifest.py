@@ -84,9 +84,7 @@ def main() -> None:
 
     manifest = {
         "version": tag.lstrip("v"),
-        "released_at": datetime.datetime.now(datetime.timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "released_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         "channel": "stable",
         "minimum_upgrade_from": "0.0.0",
         "assets": assets,

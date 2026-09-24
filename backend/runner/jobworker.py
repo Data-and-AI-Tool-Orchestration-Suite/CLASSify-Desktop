@@ -107,6 +107,13 @@ def run_job(job_id: str) -> int:
 
         storage = get_storage()
 
+        # Add-ons live in a separate dir on disk; the main app prepends it at
+        # boot, but this worker is its own process and needs it too — without
+        # it, add-on models (TabPFN/SDV) fail the import check and get skipped.
+        from classify_api.services.addon_service import init_addons
+
+        init_addons()
+
         # Archive previous run's artifacts if they exist (preserves run history),
         # then clear them so the new run starts from a clean slate.
         prev_job = repo.get_previous_job_by_report(db, report_id, job_id)

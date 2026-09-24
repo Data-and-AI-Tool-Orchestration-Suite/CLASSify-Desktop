@@ -24,9 +24,44 @@ a_binaries = collect_dynamic_libs("xgboost")
 a_datas = [
     (frontend_dist, "frontend/dist"),
     (migrations_dir, "migrations"),
-] + collect_data_files("xgboost")
+] + collect_data_files("xgboost") + collect_data_files("pip", include_py_files=True)
+
+
+def _pip_stdlib_hidden():
+    """Stdlib modules pip imports at runtime (pip ships as disk data)."""
+    import ast as _ast
+
+    import sys as _sys
+
+    import pip as _pip
+
+    root = Path(_pip.__path__[0])
+    names = set()
+    for py_file in root.rglob("*.py"):
+        try:
+            tree = _ast.parse(py_file.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.Import):
+                for alias in node.names:
+                    names.add(alias.name)
+            elif isinstance(node, _ast.ImportFrom) and node.module and node.level == 0:
+                names.add(node.module)
+    hidden = set()
+    for name in names:
+        if name.split(".")[0] in _sys.stdlib_module_names:
+            hidden.add(name)
+            while "." in name:
+                name = name.rsplit(".", 1)[0]
+                hidden.add(name)
+    return sorted(hidden)
+
 
 a_hidden_imports = [
+    # stdlib modules pip needs at runtime (pip is a disk package,
+    # so its imports are not analyzed — compute them from its source)
+    *_pip_stdlib_hidden(),
     # App modules referenced by import string (invisible to static analysis)
     "classify_api",
     "classify_api.main",
@@ -64,6 +99,7 @@ a_hidden_imports = [
 ]
 
 a_excludes = [
+    "pip",
     "torch",
     "tabpfn",
     "sdv",
