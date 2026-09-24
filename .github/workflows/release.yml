@@ -45,11 +45,12 @@ jobs:
 
       - name: Compute SHA256
         id: sha
+        shell: pwsh
         run: |
           $hash = (Get-FileHash -LiteralPath "dist\installers\CLASSify-Setup-${{ github.ref_name }}-x64.exe" -Algorithm SHA256).Hash.ToLower()
           $size = (Get-Item -LiteralPath "dist\installers\CLASSify-Setup-${{ github.ref_name }}-x64.exe").Length
-          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
-          echo "size=$size" >> $env:GITHUB_OUTPUT
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "sha256=$hash"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "size=$size"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -188,44 +189,20 @@ jobs:
       - name: Generate latest.json
         env:
           VERSION: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
           WIN_SHA: ${{ needs.build-windows.outputs.sha256 }}
           WIN_SIZE: ${{ needs.build-windows.outputs.size }}
           MAC_SHA: ${{ needs.build-macos.outputs.sha256 }}
           MAC_SIZE: ${{ needs.build-macos.outputs.size }}
           LIN_SHA: ${{ needs.build-linux.outputs.sha256 }}
           LIN_SIZE: ${{ needs.build-linux.outputs.size }}
-          RELEASE_NOTES: ${{ needs.build-windows.outputs.release_notes }}
         run: |
-          REPO="${{ github.repository }}"
-          python3 -c "
-          import json, datetime
-          manifest = {
-              'version': '${{ github.ref_name }}'.lstrip('v'),
-              'released_at': datetime.datetime.utcnow().isoformat() + 'Z',
-              'channel': 'stable',
-              'minimum_upgrade_from': '0.0.0',
-              'assets': {
-                  'windows-x64': {
-                      'url': f'https://github.com/${REPO}/releases/download/${{ github.ref_name }}/CLASSify-Setup-${{ github.ref_name }}-x64.exe',
-                      'sha256': '$WIN_SHA',
-                      'size': int('$WIN_SIZE'),
-                  },
-                  'macos-universal2': {
-                      'url': f'https://github.com/${REPO}/releases/download/${{ github.ref_name }}/CLASSify-${{ github.ref_name }}-macos.zip',
-                      'sha256': '$MAC_SHA',
-                      'size': int('$MAC_SIZE'),
-                  },
-                  'linux-x86_64-appimage': {
-                      'url': f'https://github.com/${REPO}/releases/download/${{ github.ref_name }}/CLASSify-${{ github.ref_name }}-linux.tar.gz',
-                      'sha256': '$LIN_SHA',
-                      'size': int('$LIN_SIZE'),
-                  },
-              },
-              'notes': 'CLASSify Desktop ${{ github.ref_name }}',
-          }
-          with open('latest.json', 'w') as f:
-              json.dump(manifest, f, indent=2)
-          "
+          python3 desktop/packaging/scripts/gen_manifest.py \
+            --version "$VERSION" --repo "$REPO" \
+            --win-sha "$WIN_SHA" --win-size "$WIN_SIZE" \
+            --mac-sha "$MAC_SHA" --mac-size "$MAC_SIZE" \
+            --lin-sha "$LIN_SHA" --lin-size "$LIN_SIZE" \
+            --out latest.json
 
       - name: Upload manifest to release
         uses: softprops/action-gh-release@v2
