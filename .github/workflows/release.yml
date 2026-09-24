@@ -190,18 +190,10 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-          WIN_SHA: ${{ needs.build-windows.outputs.sha256 }}
-          WIN_SIZE: ${{ needs.build-windows.outputs.size }}
-          MAC_SHA: ${{ needs.build-macos.outputs.sha256 }}
-          MAC_SIZE: ${{ needs.build-macos.outputs.size }}
-          LIN_SHA: ${{ needs.build-linux.outputs.sha256 }}
-          LIN_SIZE: ${{ needs.build-linux.outputs.size }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 desktop/packaging/scripts/gen_manifest.py \
-            --version "$VERSION" --repo "$REPO" \
-            --win-sha "$WIN_SHA" --win-size "$WIN_SIZE" \
-            --mac-sha "$MAC_SHA" --mac-size "$MAC_SIZE" \
-            --lin-sha "$LIN_SHA" --lin-size "$LIN_SIZE" \
+            --from-release --version "$VERSION" --repo "$REPO" \
             --out latest.json
 
       - name: Upload manifest to release
