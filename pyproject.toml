@@ -34,7 +34,7 @@ dependencies = [
 ml = [
     # Data / ML (base — no torch)
     "numpy>=2.0,<3",
-    "pandas>=2.2,<3",
+    "pandas>=2.2,<4",
     "scipy>=1.13,<2",
     "scikit-learn>=1.5,<2",
     "xgboost>=3.0",
