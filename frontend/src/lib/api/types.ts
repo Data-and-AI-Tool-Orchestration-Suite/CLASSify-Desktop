@@ -1074,7 +1074,10 @@ export interface components {
             version: string;
             /** Description */
             description: string;
-            /** Size Estimate Mb */
+            /**
+             * Size Estimate Mb
+             * @default 0
+             */
             size_estimate_mb: number;
             /** Modules Available */
             modules_available?: {
@@ -1085,6 +1088,8 @@ export interface components {
              * @default false
              */
             all_modules_available: boolean;
+            /** Verify Error */
+            verify_error?: string | null;
         };
         /** Body_retest_models_api_results__report_id__retest_post */
         Body_retest_models_api_results__report_id__retest_post: {
