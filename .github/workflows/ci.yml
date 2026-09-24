@@ -23,7 +23,8 @@ jobs:
       - run: ruff format --check backend desktop tests
       - run: ruff check backend desktop tests
       - run: mypy backend desktop
-      - run: pip-audit --strict
+      - run: pip freeze --exclude-editable > audit-requirements.txt
+      - run: pip-audit --strict --no-deps -r audit-requirements.txt
 
   # ── Frontend quality ──
   frontend-quality:
