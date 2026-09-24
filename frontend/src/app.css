@@ -172,3 +172,80 @@ pre {
 .progress {
   border-radius: 0.375rem;
 }
+
+/* Prepare page */
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background-color: var(--button-primary);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+.model-card {
+  position: relative;
+  display: block;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.375rem;
+  padding: 0.6rem 0.75rem 0.6rem 2.4rem;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.model-card:hover {
+  border-color: var(--button-primary);
+}
+
+.model-card-disabled {
+  cursor: not-allowed;
+}
+
+.model-card .form-check-input {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+
+.model-card-active {
+  border-color: var(--button-primary);
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.model-card-disabled {
+  opacity: 0.6;
+  background-color: var(--bs-secondary-bg);
+}
+
+.prepare-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background-color: var(--bs-body-bg);
+  border-top: 1px solid var(--bs-border-color);
+  padding: 0.75rem 0.25rem;
+  margin-top: 1.25rem;
+}
+
+/* Navbar brand logo */
+.brand-logo {
+  height: 26px;
+  width: auto;
+  border-radius: 4px;
+}

@@ -46,7 +46,10 @@ describe("system API", () => {
       text: async () => "",
     });
     await system.completeFirstRun();
-    expect(mockFetch).toHaveBeenCalledWith("/api/system/first-run/complete", expect.objectContaining({ method: "POST" }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/system/first-run/complete",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("system.metricDefs() returns definitions dict", async () => {
@@ -85,7 +88,10 @@ describe("datasets API", () => {
       text: async () => "",
     });
     await datasets.delete("abc-123");
-    expect(mockFetch).toHaveBeenCalledWith("/api/datasets/abc-123", expect.objectContaining({ method: "DELETE" }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/datasets/abc-123",
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 
   it("datasets.comment() sends PATCH with body", async () => {
@@ -139,7 +145,10 @@ describe("jobs API", () => {
       text: async () => "",
     });
     await jobs.cancel("job-1");
-    expect(mockFetch).toHaveBeenCalledWith("/api/jobs/job-1/cancel", expect.objectContaining({ method: "POST" }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/jobs/job-1/cancel",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
 
@@ -209,6 +218,9 @@ describe("addons API", () => {
       text: async () => "",
     });
     await addons.install("tabpfn");
-    expect(mockFetch).toHaveBeenCalledWith("/api/addons/tabpfn/install", expect.objectContaining({ method: "POST" }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/addons/tabpfn/install",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

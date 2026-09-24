@@ -14,15 +14,16 @@
   });
 
   const navItems = [
-    { href: "#/", label: "Home", icon: "house" },
-    { href: "#/results", label: "Results", icon: "table" },
+    { href: "#/", label: "Datasets", icon: "house" },
     { href: "#/addons", label: "Add-ons", icon: "box" },
     { href: "#/settings", label: "Settings", icon: "gear" },
   ];
 
   function isActive(href: string): boolean {
     const path = href.replace("#", "");
-    if (path === "/") return $location === "/";
+    if (path === "/") {
+      return $location === "/" || $location.startsWith("/results");
+    }
     return $location?.startsWith(path) ?? false;
   }
 </script>

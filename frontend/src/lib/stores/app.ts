@@ -3,11 +3,7 @@
  */
 
 import { writable, type Writable } from "svelte/store";
-import {
-  jobs as jobsApi,
-  results as resultsApi,
-  type JobResponse,
-} from "$lib/api/client";
+import { jobs as jobsApi, results as resultsApi, type JobResponse } from "$lib/api/client";
 
 // ── Toast store ──
 

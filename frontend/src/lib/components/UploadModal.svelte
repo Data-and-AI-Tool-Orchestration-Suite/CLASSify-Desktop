@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { datasets as datasetsApi, type DatasetUploadResponse } from "$lib/api/client";
   import { toasts } from "$lib/stores/app";
 
@@ -8,21 +9,44 @@
   }>();
 
   let file = $state<File | null>(null);
+  let filePath = $state<string | null>(null);
   let uploading = $state(false);
+
+  function isNativeShell(): boolean {
+    return "pywebview" in window;
+  }
+
+  function basename(path: string): string {
+    return path.replace(/\\/g, "/").split("/").pop() ?? path;
+  }
+
+  function acceptDroppedPath(path: string) {
+    if (!path.toLowerCase().endsWith(".csv")) {
+      toasts.error("Please select a CSV file");
+      return;
+    }
+    filePath = path;
+    file = null;
+  }
 
   function handleFileSelect(event: Event) {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files[0]) {
       file = input.files[0];
+      filePath = null;
     }
   }
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
+    if (isNativeShell()) {
+      return;
+    }
     if (event.dataTransfer?.files?.[0]) {
       const f = event.dataTransfer.files[0];
       if (f.name.endsWith(".csv")) {
         file = f;
+        filePath = null;
       } else {
         toasts.error("Please select a CSV file");
       }
@@ -34,10 +58,12 @@
   }
 
   async function handleUpload() {
-    if (!file) return;
+    if (!file && !filePath) return;
     uploading = true;
     try {
-      const result = await datasetsApi.upload(file);
+      const result = filePath
+        ? await datasetsApi.uploadPath(filePath)
+        : await datasetsApi.upload(file as File);
       oncomplete(result);
     } catch (e) {
       toasts.error(`Upload failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -45,6 +71,15 @@
       uploading = false;
     }
   }
+
+  onMount(() => {
+    function onNativeDrop(event: Event) {
+      const detail = (event as CustomEvent<string[]>).detail ?? [];
+      if (detail.length > 0) acceptDroppedPath(detail[0]);
+    }
+    window.addEventListener("classify-file-drop", onNativeDrop);
+    return () => window.removeEventListener("classify-file-drop", onNativeDrop);
+  });
 </script>
 
 <div
@@ -78,6 +113,9 @@
               <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
             </p>
             <p class="text-muted small mt-1">Click to change file</p>
+          {:else if filePath}
+            <p class="mb-0 text-success"><strong>{basename(filePath)}</strong></p>
+            <p class="text-muted small mt-1">Drop another file or click to change</p>
           {:else}
             <p class="text-muted mb-0">Drag &amp; drop a CSV file here, or click to browse</p>
           {/if}
@@ -95,7 +133,7 @@
         <button
           type="button"
           class="btn btn-primary"
-          disabled={!file || uploading}
+          disabled={!file && !filePath}
           onclick={handleUpload}
         >
           {#if uploading}

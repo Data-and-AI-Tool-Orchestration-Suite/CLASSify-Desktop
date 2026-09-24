@@ -13,6 +13,7 @@
   let loading = $state(true);
   let showUpload = $state(false);
   let searchQuery = $state("");
+  let filter = $state<"all" | "trained" | "drafts" | "failed">("all");
 
   async function loadReports() {
     loading = true;
@@ -83,6 +84,38 @@
     };
     return map[status] ?? "bg-secondary";
   }
+
+  function isDraft(status: string): boolean {
+    return ["Preview", "Uploaded"].includes(status);
+  }
+
+  // Drafts open straight into the prepare flow; everything else opens results
+  function openHref(report: DatasetRow): string {
+    return isDraft(report.status) ? `#/prepare/${report.uuid}` : `#/results/${report.uuid}`;
+  }
+
+  const filtered = $derived(
+    reports.filter((r) => {
+      if (filter === "all") return true;
+      if (filter === "trained") return r.status === "Processed";
+      if (filter === "drafts") return isDraft(r.status);
+      return r.status === "Failed";
+    }),
+  );
+
+  const counts = $derived({
+    all: reports.length,
+    trained: reports.filter((r) => r.status === "Processed").length,
+    drafts: reports.filter((r) => isDraft(r.status)).length,
+    failed: reports.filter((r) => r.status === "Failed").length,
+  });
+
+  const filters: { key: typeof filter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "trained", label: "Trained" },
+    { key: "drafts", label: "Not trained" },
+    { key: "failed", label: "Failed" },
+  ];
 </script>
 
 <div
@@ -92,10 +125,25 @@
   <button class="btn btn-primary" onclick={() => (showUpload = true)}> Upload CSV </button>
 </div>
 
-<div class="mb-3">
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <div class="btn-group" role="group" aria-label="Filter datasets">
+    {#each filters as f (f.key)}
+      <button
+        type="button"
+        class="btn btn-sm {filter === f.key ? 'btn-primary' : 'btn-outline-secondary'}"
+        onclick={() => (filter = f.key)}
+      >
+        {f.label}
+        <span class="badge ms-1 {filter === f.key ? 'bg-light text-dark' : 'bg-secondary'}">
+          {counts[f.key]}
+        </span>
+      </button>
+    {/each}
+  </div>
   <input
     type="text"
-    class="form-control"
+    class="form-control form-control-sm ms-auto"
+    style="max-width: 280px;"
     placeholder="Search datasets..."
     bind:value={searchQuery}
     oninput={() => loadReports()}
@@ -108,10 +156,16 @@
       <span class="visually-hidden">Loading...</span>
     </div>
   </div>
-{:else if reports.length === 0}
+{:else if filtered.length === 0}
   <div class="text-center py-5 text-muted">
-    <p class="mb-3">No datasets yet. Upload a CSV to get started.</p>
-    <button class="btn btn-primary btn-lg" onclick={() => (showUpload = true)}> Upload CSV </button>
+    {#if reports.length === 0}
+      <p class="mb-3">No datasets yet. Upload a CSV to get started.</p>
+      <button class="btn btn-primary btn-lg" onclick={() => (showUpload = true)}>
+        Upload CSV
+      </button>
+    {:else}
+      <p class="mb-0">No datasets match this filter.</p>
+    {/if}
   </div>
 {:else}
   <div class="table-responsive">
@@ -126,15 +180,20 @@
         </tr>
       </thead>
       <tbody>
-        {#each reports as report (report.uuid)}
+        {#each filtered as report (report.uuid)}
           <tr>
             <td>
-              <a href={`#/results/${report.uuid}`} class="text-decoration-none fw-medium">
+              <a href={openHref(report)} class="text-decoration-none fw-medium">
                 {report.filename}
               </a>
             </td>
             <td>
-              <span class="badge {statusBadge(report.status)}">{report.status}</span>
+              <span class="badge {statusBadge(report.status)}">
+                {#if report.status === "Processing"}
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                {/if}
+                {report.status}
+              </span>
             </td>
             <td class="text-muted small">{formatDate(report.created_at)}</td>
             <td class="text-muted small text-truncate" style="max-width: 200px;">
@@ -142,21 +201,17 @@
             </td>
             <td class="text-end">
               <div class="btn-group btn-group-sm">
-                {#if report.status === "Preview" || report.status === "Uploaded"}
+                {#if isDraft(report.status)}
                   <a
                     href={`#/prepare/${report.uuid}`}
                     class="btn btn-outline-primary"
-                    title="Prepare"
+                    title="Configure and train"
                   >
                     Prepare
                   </a>
                 {/if}
-                <a
-                  href={`#/results/${report.uuid}`}
-                  class="btn btn-outline-secondary"
-                  title="View Results"
-                >
-                  Results
+                <a href={openHref(report)} class="btn btn-outline-secondary" title="Open dataset">
+                  Open
                 </a>
                 <button
                   class="btn btn-outline-secondary"

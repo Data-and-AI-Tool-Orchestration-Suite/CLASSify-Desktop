@@ -133,6 +133,11 @@ export interface ColumnChange {
 
 export const datasets = {
   upload: (file: File) => upload<DatasetUploadResponse>("/datasets/upload", file),
+  uploadPath: (path: string) =>
+    request<DatasetUploadResponse>("/datasets/upload-path", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
   list: (params?: {
     start?: number;
     length?: number;
@@ -187,9 +192,7 @@ export const datasets = {
       body: JSON.stringify({ comments }),
     }),
   parameters: (id: string) =>
-    request<{ success: boolean; args: Record<string, any> | null }>(
-      `/datasets/${id}/parameters`,
-    ),
+    request<{ success: boolean; args: Record<string, any> | null }>(`/datasets/${id}/parameters`),
 };
 
 // ── Jobs ──
@@ -325,9 +328,7 @@ export const results = {
   runResults: (reportId: string, jobId: string) =>
     request<ResultsResponse>(`/results/${reportId}/runs/${jobId}/results`),
   runOutputLog: (reportId: string, jobId: string) =>
-    request<{ success: boolean; log: string }>(
-      `/results/${reportId}/runs/${jobId}/output-log`,
-    ),
+    request<{ success: boolean; log: string }>(`/results/${reportId}/runs/${jobId}/output-log`),
   runVizList: (reportId: string, jobId: string) =>
     request<VizListResponse>(`/results/${reportId}/runs/${jobId}/viz`),
   runVizUrl: (reportId: string, jobId: string, vizName: string) =>
