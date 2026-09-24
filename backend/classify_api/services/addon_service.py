@@ -1,7 +1,7 @@
-"""Add-on installer service — manages torch-gated optional ML packages.
+"""Add-on installer service â€” manages torch-gated optional ML packages.
 
 Add-ons (TabPFN, SDV) pull torch (~2GB) and are NOT included in the base
-installer.  Users install them on demand via Settings → Add-ons or the
+installer.  Users install them on demand via Settings â†’ Add-ons or the
 API.  Installed add-ons live in ``<appdata>/addons/pythonlibs`` and are
 prepended to ``sys.path`` at boot so the ML engine can import them.
 
@@ -13,6 +13,7 @@ in a shared dict that the frontend polls via the install-status endpoint.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -55,13 +56,13 @@ class AddonManifest:
         }
 
 
-# ── Built-in add-on definitions ──
+# â”€â”€ Built-in add-on definitions â”€â”€
 
 BUILTIN_ADDONS: dict[str, AddonManifest] = {
     "tabpfn": AddonManifest(
         name="tabpfn",
         version="2.0.0",
-        description="TabPFN — Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download).",
+        description="TabPFN â€” Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download, shared between add-ons and downloaded once). Note: TabPFN 2.5+ also needs a free Prior Labs API key (TABPFN_TOKEN) for model weights.",
         pip_deps=["torch>=2.3", "tabpfn>=2.0", "huggingface-hub>=0.24"],
         size_estimate_mb=2500,
         min_app_version="1.0.0",
@@ -70,7 +71,7 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
     "sdv": AddonManifest(
         name="sdv",
         version="1.13.0",
-        description="SDV — Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch.",
+        description="SDV â€” Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch (~2GB download, shared between add-ons and downloaded once).",
         pip_deps=["torch>=2.3", "sdv>=1.13"],
         size_estimate_mb=2200,
         min_app_version="1.0.0",
@@ -79,7 +80,7 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
 }
 
 
-# ── Install status tracking (shared between background thread + API) ──
+# â”€â”€ Install status tracking (shared between background thread + API) â”€â”€
 
 
 @dataclass
@@ -142,7 +143,7 @@ def list_available_addons() -> list[dict[str, Any]]:
 
 
 def get_installed_addons() -> dict[str, str]:
-    """Return a dict of installed add-on name → version."""
+    """Return a dict of installed add-on name â†’ version."""
     registry_file = get_installed_addons_file()
     if not registry_file.exists():
         return {}
@@ -277,7 +278,7 @@ def _clear_addon_dir(addon_dir: Path) -> bool:
 
 
 def _run_install(name: str) -> None:
-    """Background install worker — runs pip and updates status."""
+    """Background install worker â€” runs pip and updates status."""
     manifest = BUILTIN_ADDONS[name]
     addon_dir = get_addon_dir()
 
@@ -296,7 +297,7 @@ def _run_install(name: str) -> None:
                 _install_status[name].error = msg
 
     try:
-        # Serialize installs — only one at a time (shared target directory)
+        # Serialize installs â€” only one at a time (shared target directory)
         with _install_lock:
             if name in _install_status:
                 _install_status[name].state = "queued"
@@ -315,7 +316,7 @@ def _run_install(name: str) -> None:
         if not others:
             if not _clear_addon_dir(addon_dir):
                 fail(
-                    "Cannot clear previous installation — files are locked. "
+                    "Cannot clear previous installation â€” files are locked. "
                     "Restart the app and try again."
                 )
                 return
@@ -326,7 +327,6 @@ def _run_install(name: str) -> None:
             "install",
             "--target",
             str(addon_dir),
-            "--no-cache-dir",
             "--extra-index-url",
             _CPU_TORCH_INDEX,
             *manifest.pip_deps,
@@ -396,7 +396,7 @@ def uninstall_addon(name: str) -> dict[str, Any]:
             log.warning("addon.uninstall_locked", addon=name, error=str(e))
             return {
                 "success": False,
-                "message": "Cannot remove add-on files — they are locked. "
+                "message": "Cannot remove add-on files â€” they are locked. "
                 "Restart the app and try again.",
             }
     else:
@@ -416,9 +416,43 @@ def _prepend_addon_path() -> None:
         sys.path.insert(0, addon_dir)
 
 
+def _ensure_faker_meipass_link(addon_dir: Path) -> None:
+    """Link faker into ``sys._MEIPASS`` so its locales resolve when frozen.
+
+    faker detects PyInstaller and looks for its providers under
+    ``sys._MEIPASS/faker`` â€” but add-on packages live in the add-on dir,
+    outside ``_MEIPASS``, so the locale list comes back empty and every
+    ``Faker()`` call raises "Invalid configuration for faker locale".
+    Linking the package into ``_MEIPASS`` fixes path resolution.  A
+    junction is used on Windows (no admin rights needed); a symlink on
+    macOS/Linux.
+    """
+    if not getattr(sys, "frozen", False) or not getattr(sys, "_MEIPASS", False):
+        return
+    faker_src = addon_dir / "faker"
+    if not faker_src.is_dir():
+        return
+    faker_link = Path(getattr(sys, "_MEIPASS", "")) / "faker"
+    if faker_link.exists() or faker_link.is_symlink():
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(faker_link), str(faker_src)],
+                check=True,
+                capture_output=True,
+            )
+        else:
+            faker_link.symlink_to(faker_src, target_is_directory=True)
+        log.info("addons.faker_link_created", link=str(faker_link))
+    except OSError as e:
+        log.warning("addons.faker_link_failed", error=str(e))
+
+
 def init_addons() -> None:
-    """Initialize add-ons at app startup — prepend path and log status."""
+    """Initialize add-ons at app startup â€” prepend path and log status."""
     _prepend_addon_path()
+    _ensure_faker_meipass_link(get_addon_dir())
     installed = get_installed_addons()
     if installed:
         log.info("addons.loaded", addons=list(installed.keys()))
