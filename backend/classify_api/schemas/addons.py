@@ -37,7 +37,20 @@ class AddonStatusResponse(BaseModel):
 
 
 class AddonInstallResponse(BaseModel):
-    """Response from install/uninstall."""
+    """Result of an install/uninstall action."""
 
     success: bool
     message: str
+
+
+class AddonConfigResponse(BaseModel):
+    """Add-on configuration (secrets are never returned, only their state)."""
+
+    name: str
+    settings: dict[str, bool] = Field(default_factory=dict)
+
+
+class AddonConfigUpdate(BaseModel):
+    """Update add-on settings. Empty string clears a value."""
+
+    settings: dict[str, str] = Field(default_factory=dict)

@@ -962,10 +962,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/addons/{name}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Addon Config
+         * @description Get add-on configuration state (secret values are never returned).
+         */
+        get: operations["get_addon_config_api_addons__name__config_get"];
+        /**
+         * Update Addon Config
+         * @description Update add-on settings (e.g. store an API key for model weights).
+         */
+        put: operations["update_addon_config_api_addons__name__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AddonConfigResponse
+         * @description Add-on configuration (secrets are never returned, only their state).
+         */
+        AddonConfigResponse: {
+            /** Name */
+            name: string;
+            /** Settings */
+            settings?: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * AddonConfigUpdate
+         * @description Update add-on settings. Empty string clears a value.
+         */
+        AddonConfigUpdate: {
+            /** Settings */
+            settings?: {
+                [key: string]: string;
+            };
+        };
         /**
          * AddonInfo
          * @description Info about a single add-on.
@@ -999,7 +1045,7 @@ export interface components {
         };
         /**
          * AddonInstallResponse
-         * @description Response from install/uninstall.
+         * @description Result of an install/uninstall action.
          */
         AddonInstallResponse: {
             /** Success */
@@ -2891,6 +2937,72 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_addon_config_api_addons__name__config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddonConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_addon_config_api_addons__name__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddonConfigUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddonConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

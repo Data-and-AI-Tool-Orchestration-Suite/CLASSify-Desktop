@@ -245,9 +245,20 @@ export interface AddonInfo {
   installed: boolean;
 }
 
+export interface AddonConfig {
+  name: string;
+  settings: Record<string, boolean>;
+}
+
 export const addons = {
   list: () => request<{ addons: AddonInfo[] }>("/addons"),
   status: (name: string) => request<Record<string, unknown>>(`/addons/${name}/status`),
+  config: (name: string) => request<AddonConfig>(`/addons/${name}/config`),
+  updateConfig: (name: string, settings: Record<string, string>) =>
+    request<AddonConfig>(`/addons/${name}/config`, {
+      method: "PUT",
+      body: JSON.stringify({ settings }),
+    }),
   install: (name: string) =>
     request<{ success: boolean; message: string }>(`/addons/${name}/install`, { method: "POST" }),
   installStatus: (name: string) =>

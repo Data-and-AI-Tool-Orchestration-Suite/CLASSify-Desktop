@@ -1,4 +1,4 @@
-"""Add-on installer service â€” manages torch-gated optional ML packages.
+"""Add-on installer service —” manages torch-gated optional ML packages.
 
 Add-ons (TabPFN, SDV) pull torch (~2GB) and are NOT included in the base
 installer.  Users install them on demand via Settings â†’ Add-ons or the
@@ -62,7 +62,7 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
     "tabpfn": AddonManifest(
         name="tabpfn",
         version="2.0.0",
-        description="TabPFN â€” Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download, shared between add-ons and downloaded once). Note: TabPFN 2.5+ also needs a free Prior Labs API key (TABPFN_TOKEN) for model weights.",
+        description="TabPFN —” Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download, shared between add-ons and downloaded once). Note: TabPFN 2.5+ also needs a free Prior Labs API key (TABPFN_TOKEN) for model weights.",
         pip_deps=["torch>=2.3", "tabpfn>=2.0", "huggingface-hub>=0.24"],
         size_estimate_mb=2500,
         min_app_version="1.0.0",
@@ -71,7 +71,7 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
     "sdv": AddonManifest(
         name="sdv",
         version="1.13.0",
-        description="SDV â€” Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch (~2GB download, shared between add-ons and downloaded once).",
+        description="SDV —” Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch (~2GB download, shared between add-ons and downloaded once).",
         pip_deps=["torch>=2.3", "sdv>=1.13"],
         size_estimate_mb=2200,
         min_app_version="1.0.0",
@@ -126,6 +126,41 @@ def get_addon_dir() -> Path:
 def get_installed_addons_file() -> Path:
     """Return the path to the installed add-ons registry file."""
     return get_addon_dir().parent / "installed.json"
+
+
+def get_addon_settings_file() -> Path:
+    """Return the path to the add-on settings file (API keys etc.)."""
+    return get_addon_dir().parent / "addon_settings.json"
+
+
+def get_addon_settings() -> dict[str, str]:
+    """Return stored add-on settings (API keys etc.)."""
+    settings_file = get_addon_settings_file()
+    if not settings_file.exists():
+        return {}
+    try:
+        data = json.loads(settings_file.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def set_addon_setting(key: str, value: str) -> None:
+    """Persist a single add-on setting and apply it to the environment."""
+    settings_map = get_addon_settings()
+    settings_map[key] = value
+    settings_file = get_addon_settings_file()
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text(json.dumps(settings_map, indent=2), encoding="utf-8")
+    _apply_addon_settings()
+
+
+def _apply_addon_settings() -> None:
+    """Apply stored add-on settings to the process environment."""
+    settings_map = get_addon_settings()
+    for key, value in settings_map.items():
+        if key == "tabpfn_token" and value:
+            os.environ["TABPFN_TOKEN"] = value
 
 
 def list_available_addons() -> list[dict[str, Any]]:
@@ -278,7 +313,7 @@ def _clear_addon_dir(addon_dir: Path) -> bool:
 
 
 def _run_install(name: str) -> None:
-    """Background install worker â€” runs pip and updates status."""
+    """Background install worker —” runs pip and updates status."""
     manifest = BUILTIN_ADDONS[name]
     addon_dir = get_addon_dir()
 
@@ -297,7 +332,7 @@ def _run_install(name: str) -> None:
                 _install_status[name].error = msg
 
     try:
-        # Serialize installs â€” only one at a time (shared target directory)
+        # Serialize installs —” only one at a time (shared target directory)
         with _install_lock:
             if name in _install_status:
                 _install_status[name].state = "queued"
@@ -316,7 +351,7 @@ def _run_install(name: str) -> None:
         if not others:
             if not _clear_addon_dir(addon_dir):
                 fail(
-                    "Cannot clear previous installation â€” files are locked. "
+                    "Cannot clear previous installation —” files are locked. "
                     "Restart the app and try again."
                 )
                 return
@@ -396,11 +431,17 @@ def uninstall_addon(name: str) -> dict[str, Any]:
             log.warning("addon.uninstall_locked", addon=name, error=str(e))
             return {
                 "success": False,
-                "message": "Cannot remove add-on files â€” they are locked. "
+                "message": "Cannot remove add-on files —” they are locked. "
                 "Restart the app and try again.",
             }
     else:
         log.info("addon.uninstall_skipped_shared_deps", addon=name, others=other_installed)
+        message = (
+            f"{name} add-on uninstalled. Its files were kept because other add-ons "
+            f"(torch is shared) still need them: {', '.join(other_installed)}."
+        )
+        refresh_cache()
+        return {"success": True, "message": message}
 
     del installed[name]
     get_installed_addons_file().write_text(json.dumps(installed, indent=2))
@@ -420,7 +461,7 @@ def _ensure_faker_meipass_link(addon_dir: Path) -> None:
     """Link faker into ``sys._MEIPASS`` so its locales resolve when frozen.
 
     faker detects PyInstaller and looks for its providers under
-    ``sys._MEIPASS/faker`` â€” but add-on packages live in the add-on dir,
+    ``sys._MEIPASS/faker`` —” but add-on packages live in the add-on dir,
     outside ``_MEIPASS``, so the locale list comes back empty and every
     ``Faker()`` call raises "Invalid configuration for faker locale".
     Linking the package into ``_MEIPASS`` fixes path resolution.  A
@@ -450,9 +491,10 @@ def _ensure_faker_meipass_link(addon_dir: Path) -> None:
 
 
 def init_addons() -> None:
-    """Initialize add-ons at app startup â€” prepend path and log status."""
+    """Initialize add-ons at app startup — prepend path and log status."""
     _prepend_addon_path()
     _ensure_faker_meipass_link(get_addon_dir())
+    _apply_addon_settings()
     installed = get_installed_addons()
     if installed:
         log.info("addons.loaded", addons=list(installed.keys()))

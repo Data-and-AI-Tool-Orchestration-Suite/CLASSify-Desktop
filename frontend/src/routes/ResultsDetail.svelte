@@ -338,6 +338,13 @@
   {:else if report.status === "Failed"}
     <div class="alert alert-danger">
       Training failed. Check the Output Log tab for details.
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-danger ms-2 me-2"
+        onclick={() => (activeTab = "log")}
+      >
+        Open Output Log
+      </button>
       <a href={`#/prepare/${reportId}`} class="alert-link">Edit settings and rerun</a>.
     </div>
   {:else if report.status === "Preview" || report.status === "Uploaded"}

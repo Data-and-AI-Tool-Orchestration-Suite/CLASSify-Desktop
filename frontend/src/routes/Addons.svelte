@@ -9,12 +9,22 @@
   let installProgress = $state<string[]>([]);
   let installError = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let tabpfnToken = $state("");
+  let tokenSet = $state(false);
+  let savingToken = $state(false);
 
   async function loadAddons() {
     loading = true;
     try {
       const resp = await addonsApi.list();
       addons = resp.addons;
+
+      try {
+        const config = await addonsApi.config("tabpfn");
+        tokenSet = config.settings.tabpfn_token === true;
+      } catch {
+        // Config is best-effort
+      }
 
       // Check if any addon is currently installing/queued (resume after navigation)
       if (!installing) {
@@ -42,6 +52,20 @@
     installProgress = [...initialProgress];
     installError = null;
     startPolling(name);
+  }
+
+  async function saveTabpfnToken() {
+    savingToken = true;
+    try {
+      await addonsApi.updateConfig("tabpfn", { tabpfn_token: tabpfnToken.trim() });
+      tokenSet = tabpfnToken.trim().length > 0;
+      tabpfnToken = "";
+      toasts.success(tokenSet ? "Prior Labs API key saved" : "Prior Labs API key cleared");
+    } catch (e) {
+      toasts.error(`Failed to save API key: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      savingToken = false;
+    }
   }
 
   function startPolling(name: string) {
@@ -125,8 +149,8 @@
   <strong>About Add-ons</strong><br />
   Add-ons provide optional ML capabilities that require large dependencies (torch ~2GB). They are not
   included in the base installer. Install them on demand — all data stays local.
-  <strong>torch is downloaded once and shared between add-ons</strong> — the second add-on only
-  downloads its own packages, and wheels are cached so reinstalls don't re-download either.
+  <strong>torch is downloaded once and shared between add-ons</strong> — the second add-on only downloads
+  its own packages, and wheels are cached so reinstalls don't re-download either.
 </div>
 
 {#if loading}
@@ -163,6 +187,48 @@
               <dt class="col-sm-5">Provides</dt>
               <dd class="col-sm-7">{addon.provides.join(", ")}</dd>
             </dl>
+
+            {#if addon.name === "tabpfn"}
+              <div class="border rounded p-2 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small fw-medium">Prior Labs API key</span>
+                  {#if tokenSet}
+                    <span class="badge bg-success">key saved</span>
+                  {/if}
+                </div>
+                <p class="small text-muted mb-2">
+                  TabPFN 2.5+ downloads its model weights from Prior Labs and requires a free API
+                  key. Steps: create an account (or log in) at
+                  <strong>ux.priorlabs.ai</strong>, accept the license on the
+                  <strong>Licenses</strong> tab, then copy the key from the
+                  <strong>Account</strong> page and paste it here.
+                </p>
+                <div class="d-flex gap-2">
+                  <input
+                    type="password"
+                    class="form-control form-control-sm"
+                    placeholder={tokenSet
+                      ? "Key is saved — paste a new key to replace it"
+                      : "TABPFN_TOKEN"}
+                    bind:value={tabpfnToken}
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary btn-sm flex-shrink-0"
+                    disabled={savingToken || tabpfnToken.trim().length === 0}
+                    onclick={saveTabpfnToken}
+                  >
+                    {#if savingToken}
+                      <span class="spinner-border spinner-border-sm me-1"></span>
+                      Saving...
+                    {:else}
+                      Save
+                    {/if}
+                  </button>
+                </div>
+                <div class="form-text mb-0">Applies to new training jobs immediately.</div>
+              </div>
+            {/if}
 
             {#if installing === addon.name}
               <div class="mb-3">

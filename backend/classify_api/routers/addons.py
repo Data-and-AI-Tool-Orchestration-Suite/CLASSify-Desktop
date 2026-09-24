@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from classify_api.schemas.addons import (
+    AddonConfigResponse,
+    AddonConfigUpdate,
     AddonInfo,
     AddonInstallResponse,
     AddonListResponse,
@@ -14,10 +16,12 @@ from classify_api.schemas.addons import (
 )
 from classify_api.services.addon_service import (
     BUILTIN_ADDONS,
+    get_addon_settings,
     get_addon_status,
     get_install_status,
     install_addon,
     list_available_addons,
+    set_addon_setting,
     uninstall_addon,
 )
 from ml.backends import list_addons
@@ -25,6 +29,9 @@ from ml.backends import list_addons
 router = APIRouter()
 
 BUILTIN_ADDON_NAMES = set(BUILTIN_ADDONS.keys())
+
+# Settings keys users may configure per add-on, e.g. tabpfn -> tabpfn_token
+ADDON_SETTING_KEYS: dict[str, set[str]] = {"tabpfn": {"tabpfn_token"}}
 
 
 @router.get("", response_model=AddonListResponse)
@@ -84,3 +91,27 @@ def uninstall_addon_endpoint(name: str) -> AddonInstallResponse:
 def check_modules() -> dict[str, Any]:
     """Check which optional ML modules are currently importable."""
     return {"modules": list_addons()}
+
+
+@router.get("/{name}/config", response_model=AddonConfigResponse)
+def get_addon_config(name: str) -> AddonConfigResponse:
+    """Get add-on configuration state (secret values are never returned)."""
+    if name not in BUILTIN_ADDON_NAMES:
+        raise HTTPException(status_code=404, detail=f"Unknown add-on: {name}")
+    allowed = ADDON_SETTING_KEYS.get(name, set())
+    stored = get_addon_settings()
+    settings_state = {key: bool(stored.get(key)) for key in sorted(allowed)}
+    return AddonConfigResponse(name=name, settings=settings_state)
+
+
+@router.put("/{name}/config", response_model=AddonConfigResponse)
+def update_addon_config(name: str, update: AddonConfigUpdate) -> AddonConfigResponse:
+    """Update add-on settings (e.g. store an API key for model weights)."""
+    if name not in BUILTIN_ADDON_NAMES:
+        raise HTTPException(status_code=404, detail=f"Unknown add-on: {name}")
+    allowed = ADDON_SETTING_KEYS.get(name, set())
+    for key, value in update.settings.items():
+        if key not in allowed:
+            raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+        set_addon_setting(key, value.strip())
+    return get_addon_config(name)
