@@ -263,7 +263,7 @@ def _verify_worker(modules: list[str], addon_dir: str, queue: Any) -> None:
     # faker resolves its data paths via sys.frozen checks — unfreeze in
     # this single-purpose child so paths resolve from the add-on dir
     if getattr(sys, "frozen", False):
-        sys.__dict__['frozen'] = False
+        sys.__dict__["frozen"] = False
 
     if addon_dir not in sys.path:
         sys.path.insert(0, addon_dir)
