@@ -1,4 +1,4 @@
-﻿# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for CLASSify Desktop on Linux.
 
 Produces a --onedir bundle.  Packaged as AppImage, .deb, and .tar.gz.

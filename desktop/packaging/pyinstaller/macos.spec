@@ -1,4 +1,4 @@
-﻿# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for CLASSify Desktop on macOS.
 
 Build separately on arm64 and x86_64, then lipo-merge for Universal2.

@@ -1,4 +1,4 @@
-﻿"""System-level endpoints: health, version, disk usage, update check."""
+"""System-level endpoints: health, version, disk usage, update check."""
 
 from __future__ import annotations
 
