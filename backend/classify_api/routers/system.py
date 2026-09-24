@@ -17,7 +17,7 @@ router = APIRouter()
 # Stable URL for the update manifest â€” always redirects to the latest stable release
 UPDATE_MANIFEST_URL = "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/latest/download/latest.json"
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 
 @router.get("/health")
