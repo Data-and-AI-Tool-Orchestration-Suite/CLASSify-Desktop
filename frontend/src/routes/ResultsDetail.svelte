@@ -63,6 +63,11 @@
         // No run history
       }
 
+      // Failed runs land on the Output Log so the error is front and center
+      if (report.status === "Failed") {
+        activeTab = "log";
+      }
+
       if (report.status === "Processed") {
         await Promise.all([loadRunData(), loadMetricDefs()]);
       }
@@ -335,24 +340,25 @@
       <div class="spinner-border spinner-border-sm me-2"></div>
       Training in progress... This page will update automatically when complete.
     </div>
-  {:else if report.status === "Failed"}
-    <div class="alert alert-danger">
-      Training failed. Check the Output Log tab for details.
-      <button
-        type="button"
-        class="btn btn-sm btn-outline-danger ms-2 me-2"
-        onclick={() => (activeTab = "log")}
-      >
-        Open Output Log
-      </button>
-      <a href={`#/prepare/${reportId}`} class="alert-link">Edit settings and rerun</a>.
-    </div>
   {:else if report.status === "Preview" || report.status === "Uploaded"}
     <div class="alert alert-info">
       This dataset hasn't been trained yet.
       <a href={`#/prepare/${reportId}`} class="alert-link">Go to Prepare page</a>
     </div>
   {:else}
+    {#if report.status === "Failed"}
+      <div class="alert alert-danger mb-3">
+        Training failed. Check the Output Log tab for details.
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger ms-2 me-2"
+          onclick={() => (activeTab = "log")}
+        >
+          Open Output Log
+        </button>
+        <a href={`#/prepare/${reportId}`} class="alert-link">Edit settings and rerun</a>.
+      </div>
+    {/if}
     <!-- Tabs — flex column fills the viewport so scrollable tabs
          (Prediction Insights, Output Log) reach the bottom of the page -->
     <div class="d-flex flex-column" style="height: calc(100vh - 232px); min-height: 360px;">
