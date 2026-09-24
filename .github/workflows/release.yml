@@ -96,7 +96,7 @@ jobs:
       - name: Create ZIP
         run: |
           cd dist
-          zip -r CLASSify-${{ github.ref_name }}-macos.zip CLASSify.app
+          zip -r CLASSify-${{ github.ref_name }}-macos.zip CLASSify
 
       - name: Compute SHA256
         id: sha
