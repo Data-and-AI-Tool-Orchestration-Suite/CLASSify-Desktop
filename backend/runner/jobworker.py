@@ -110,9 +110,11 @@ def run_job(job_id: str) -> int:
         # Add-ons live in a separate dir on disk; the main app prepends it at
         # boot, but this worker is its own process and needs it too — without
         # it, add-on models (TabPFN/SDV) fail the import check and get skipped.
+        # The faker _MEIPASS override is job-side only (faker is used during
+        # training/synthesis; the main app's static mount needs the real path).
         from classify_api.services.addon_service import init_addons
 
-        init_addons()
+        init_addons(apply_faker_override=True)
 
         # Archive previous run's artifacts if they exist (preserves run history),
         # then clear them so the new run starts from a clean slate.

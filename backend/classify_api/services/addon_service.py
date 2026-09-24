@@ -460,46 +460,56 @@ def _prepend_addon_path() -> None:
         sys.path.insert(0, addon_dir)
 
 
+def _remove_stale_faker_junction(addon_dir: Path) -> None:
+    """Remove a faker junction inside ``sys._MEIPASS`` if an old version
+    created one — it poisons the bundle directory tree for file access."""
+    if not getattr(sys, "frozen", False):
+        return
+    old_meipass = getattr(sys, "_MEIPASS", None)
+    if not old_meipass:
+        return
+    stale_link = Path(old_meipass) / "faker"
+    if stale_link.exists() and stale_link.resolve() != (addon_dir / "faker").resolve():
+        with contextlib.suppress(OSError):
+            stale_link.unlink()
+            log.info("addons.faker_stale_link_removed", path=str(stale_link))
+
+
 def _apply_faker_meipass_override(addon_dir: Path) -> None:
     """Point ``sys._MEIPASS`` at the add-on dir so faker resolves when frozen.
 
     faker detects PyInstaller and looks for its providers under
-    ``sys._MEIPASS/faker`` â€” but add-on packages live in the add-on dir,
+    ``sys._MEIPASS/faker`` — but add-on packages live in the add-on dir,
     outside ``_MEIPASS``, so the locale list comes back empty and every
     ``Faker()`` call raises "Invalid configuration for faker locale".
 
-    A filesystem junction into ``_MEIPASS`` was tried first and broke
-    installed apps outright (WinError 448, untrusted mount point â€” the
-    frozen importer refuses to traverse it).  Overwriting the process-local
-    ``sys._MEIPASS`` achieves the same effect with no filesystem changes:
-    pyinstaller's own importer caches its path at startup, so nothing else
-    in the process depends on the attribute after boot.
+    Overwriting the process-local ``sys._MEIPASS`` fixes path resolution
+    with no filesystem changes.  Only safe in processes that don't serve
+    the SPA (the static mount resolves via ``sys._MEIPASS``), so the main
+    app must NOT call this — jobworker and verification children only.
     """
     if not getattr(sys, "frozen", False):
         return
     if not (addon_dir / "faker").is_dir():
         return
 
-    # Remove any junction a previous version created inside _MEIPASS â€”
-    # it poisons the bundle directory tree for file access.
-    old_meipass = getattr(sys, "_MEIPASS", None)
-    if old_meipass:
-        stale_link = Path(old_meipass) / "faker"
-        if stale_link.exists() and stale_link.resolve() != (addon_dir / "faker").resolve():
-            with contextlib.suppress(OSError):
-                stale_link.unlink()
-                log.info("addons.faker_stale_link_removed", path=str(stale_link))
-
     if getattr(sys, "_MEIPASS", "") == str(addon_dir):
         return
     sys.__dict__["_MEIPASS"] = str(addon_dir)
 
 
-def init_addons() -> None:
-    """Initialize add-ons at app startup â€” prepend path and log status."""
+def init_addons(apply_faker_override: bool = False) -> None:
+    """Initialize add-ons at app startup — prepend path and log status.
+
+    ``apply_faker_override``: job-side processes (jobworker) must override
+    ``sys._MEIPASS`` so faker resolves during training; the main app must
+    not (its static file mount depends on the real value).
+    """
     _prepend_addon_path()
     addon_dir = get_addon_dir()
-    _apply_faker_meipass_override(addon_dir)
+    _remove_stale_faker_junction(addon_dir)
+    if apply_faker_override:
+        _apply_faker_meipass_override(addon_dir)
     installed = get_installed_addons()
     if installed:
         log.info("addons.loaded", addons=list(installed.keys()))
