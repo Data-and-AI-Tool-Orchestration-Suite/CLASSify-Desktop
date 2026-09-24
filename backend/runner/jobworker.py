@@ -165,7 +165,7 @@ def run_job(job_id: str) -> int:
         # checks — unfreeze for the training phase so add-on packages
         # resolve from the add-on dir instead of sys._MEIPASS
         if getattr(sys, "frozen", False):
-            sys.frozen = False
+            sys.__dict__['frozen'] = False
 
         # Run the trainer
         from ml.engine import trainer
