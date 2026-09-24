@@ -18,27 +18,6 @@ import structlog
 log = structlog.get_logger()
 
 
-class WindowApi:
-    """JS API for the custom title bar (minimize / maximize / close)."""
-
-    def __init__(self, shell: DesktopShell) -> None:
-        self._shell = shell
-
-    def minimize_window(self) -> None:
-        self._shell._window.minimize()
-
-    def toggle_maximize_window(self) -> None:
-        window = self._shell._window
-        if self._shell._maximized:
-            window.restore()
-        else:
-            window.maximize()
-        self._shell._maximized = not self._shell._maximized
-
-    def close_window(self) -> None:
-        self._shell._window.destroy()
-
-
 class DesktopShell:
     """Manages the pywebview window, tray icon, and app lifecycle."""
 
@@ -49,7 +28,6 @@ class DesktopShell:
         self._window: Any = None
         self._tray: Any = None
         self._quitting = False
-        self._maximized = False
 
     def run(self) -> None:
         """Start the webview and block until the app quits."""
@@ -64,8 +42,6 @@ class DesktopShell:
             height=800,
             min_size=(1024, 600),
             text_select=False,
-            frameless=True,
-            js_api=WindowApi(self),
         )
         self._window.events.closing += self._on_window_closing
         self._window.events.loaded += self._setup_file_drop
