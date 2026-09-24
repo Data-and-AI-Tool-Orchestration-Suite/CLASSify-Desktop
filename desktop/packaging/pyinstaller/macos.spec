@@ -9,16 +9,24 @@ block_cipher = None
 
 from pathlib import Path
 
-repo_root = Path(SPECPATH).parents[3]
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+repo_root = Path(SPECPATH).parents[2]
 frontend_dist = str(repo_root / "frontend" / "dist")
 migrations_dir = str(repo_root / "backend" / "migrations")
+
+a_binaries = collect_dynamic_libs("xgboost")
 
 a_datas = [
     (frontend_dist, "frontend/dist"),
     (migrations_dir, "migrations"),
-]
+] + collect_data_files("xgboost")
 
 a_hidden_imports = [
+    # App modules referenced by import string (invisible to static analysis)
+    "classify_api",
+    "classify_api.main",
+    "runner.jobworker",
     "uvicorn.logging",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",
@@ -56,8 +64,8 @@ a_excludes = [
 a = Analysis(
     [str(repo_root / "desktop" / "classify_desktop" / "__main__.py")],
     pathex=[str(repo_root / "backend"), str(repo_root / "desktop")],
-    binaries=[],
-    datas=a_data,
+    binaries=a_binaries,
+    datas=a_datas,
     hiddenimports=a_hidden_imports,
     hookspath=[],
     runtime_hooks=[],
@@ -69,7 +77,7 @@ a = Analysis(
 jobworker_a = Analysis(
     [str(repo_root / "backend" / "runner" / "jobworker.py")],
     pathex=[str(repo_root / "backend"), str(repo_root / "desktop")],
-    binaries=[],
+    binaries=a_binaries,
     datas=[],
     hiddenimports=a_hidden_imports,
     hookspath=[],
@@ -105,7 +113,7 @@ jobworker_exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,
 )
 
 coll = COLLECT(
