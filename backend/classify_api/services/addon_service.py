@@ -189,27 +189,75 @@ def install_addon(name: str) -> dict[str, Any]:
     return {"success": True, "message": f"Installation started for {name}"}
 
 
-def _verify_in_subprocess(modules: list[str], addon_dir: Path) -> tuple[bool, str | None]:
-    """Verify that modules can be imported in a fresh subprocess.
+def _pip_install(pip_args: list[str]) -> tuple[int, str]:
+    """Run a pip install, returning (returncode, output).
 
-    Uses a subprocess so that imported DLLs are released when the process
-    exits, keeping them unlocked for future reinstalls on Windows.
+    In frozen apps ``sys.executable`` is the app bootloader (``-m pip``
+    would just relaunch the app), so pip runs in-process via its internal
+    API.  In dev the subprocess keeps pip isolated from this process.
     """
-    import os
+    if getattr(sys, "frozen", False):
+        import contextlib
+        import io
 
-    import_str = "; ".join(f"import {m}" for m in modules)
-    env = {**os.environ, "PYTHONPATH": str(addon_dir)}
+        from pip._internal.cli.main import main as pip_main
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            return_code = pip_main(pip_args)
+        return return_code, buffer.getvalue()
+
     result = subprocess.run(
-        [sys.executable, "-c", import_str],
+        [sys.executable, "-m", "pip", *pip_args],
         capture_output=True,
         text=True,
-        timeout=120,
-        env=env,
+        timeout=900,
     )
-    if result.returncode != 0:
-        err = result.stderr.strip()[-500:] if result.stderr else "Unknown error"
-        return False, err
-    return True, None
+    return result.returncode, result.stderr or result.stdout
+
+
+def _verify_worker(modules: list[str], addon_dir: str, queue: Any) -> None:
+    """Import *modules* from *addon_dir* and report via *queue*.
+
+    Runs in a spawned child process (multiprocessing + freeze_support
+    works inside frozen apps) so imported DLLs are released on exit.
+    """
+    import importlib
+
+    addon_dir_str = str(addon_dir)
+    if addon_dir_str not in sys.path:
+        sys.path.insert(0, addon_dir_str)
+    errors: list[str] = []
+    for module in modules:
+        try:
+            importlib.import_module(module)
+        except Exception as e:
+            errors.append(f"{module}: {e}")
+    queue.put((not errors, "; ".join(errors) if errors else None))
+
+
+def _verify_modules(modules: list[str], addon_dir: Path) -> tuple[bool, str | None]:
+    """Verify that modules can be imported in a spawned child process.
+
+    Spawn + ``freeze_support()`` works inside frozen apps (the child runs
+    the verification target instead of relaunching the app) and imported
+    DLLs are released when the child exits, keeping files unlocked for
+    future reinstalls on Windows.
+    """
+    import multiprocessing as mp
+
+    queue: mp.Queue[tuple[bool, str | None]] = mp.Queue()
+    proc = mp.Process(target=_verify_worker, args=(modules, str(addon_dir), queue))
+    proc.start()
+    proc.join(timeout=300)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        return False, "verification timed out"
+    if queue.empty():
+        return False, f"verification process exited unexpectedly (code {proc.exitcode})"
+    result: tuple[bool, str | None] = queue.get()
+    return result
 
 
 def _clear_addon_dir(addon_dir: Path) -> bool:
@@ -262,19 +310,19 @@ def _run_install(name: str) -> None:
         update(f"Packages: {', '.join(manifest.pip_deps)}")
         update("Using CPU-only torch index to minimize download size...")
 
-        # Clear stale files from previous/failed installs
         update("Clearing previous installation files...")
-        if not _clear_addon_dir(addon_dir):
-            fail(
-                "Cannot clear previous installation — files are locked. "
-                "Restart the app and try again."
-            )
-            return
+        others = [k for k in get_installed_addons() if k != name]
+        if not others:
+            if not _clear_addon_dir(addon_dir):
+                fail(
+                    "Cannot clear previous installation — files are locked. "
+                    "Restart the app and try again."
+                )
+                return
+        else:
+            update(f"Keeping files for other installed add-ons: {', '.join(others)}")
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "pip",
+        pip_args = [
             "install",
             "--target",
             str(addon_dir),
@@ -285,15 +333,10 @@ def _run_install(name: str) -> None:
         ]
 
         update("Running pip install (this may take several minutes)...")
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=900,
-        )
+        return_code, output = _pip_install(pip_args)
 
-        if result.returncode != 0:
-            error = result.stderr[-1000:] if result.stderr else "Unknown pip error"
+        if return_code != 0:
+            error = output[-1000:] if output else "Unknown pip error"
             fail(f"pip failed: {error}")
             return
 
@@ -302,7 +345,7 @@ def _run_install(name: str) -> None:
         _prepend_addon_path()
         refresh_cache()
 
-        ok, err = _verify_in_subprocess(manifest.provides, addon_dir)
+        ok, err = _verify_modules(manifest.provides, addon_dir)
         if not ok:
             fail(f"Verification failed: {err}")
             return
@@ -343,9 +386,19 @@ def uninstall_addon(name: str) -> dict[str, Any]:
     if not other_installed:
         import shutil
 
-        if addon_dir.exists():
-            shutil.rmtree(addon_dir)
-        addon_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if addon_dir.exists():
+                shutil.rmtree(addon_dir)
+            addon_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            # Verification imports may keep DLLs loaded in this process;
+            # files are locked until the app restarts.
+            log.warning("addon.uninstall_locked", addon=name, error=str(e))
+            return {
+                "success": False,
+                "message": "Cannot remove add-on files — they are locked. "
+                "Restart the app and try again.",
+            }
     else:
         log.info("addon.uninstall_skipped_shared_deps", addon=name, others=other_installed)
 
@@ -386,7 +439,7 @@ def get_addon_status(name: str) -> dict[str, Any]:
     addon_dir = get_addon_dir()
     modules_available: dict[str, bool] = {}
     if installed and addon_dir.exists():
-        ok, _ = _verify_in_subprocess(manifest.provides, addon_dir)
+        ok, _ = _verify_modules(manifest.provides, addon_dir)
         modules_available = {mod: ok for mod in manifest.provides}
     else:
         modules_available = {mod: False for mod in manifest.provides}

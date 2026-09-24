@@ -1,4 +1,4 @@
-# -*- mode: python ; coding: utf-8 -*-
+﻿# -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for CLASSify Desktop on Linux.
 
 Produces a --onedir bundle.  Packaged as AppImage, .deb, and .tar.gz.
@@ -56,7 +56,7 @@ a_hidden_imports = [
 a_excludes = [
     "torch", "tabpfn", "sdv", "ctgan", "copulas", "rdt", "deepecho",
     "clearml", "boto3", "s3transfer", "flask", "pytest", "mypy", "ruff",
-    "pip", "setuptools", "_pytest", "IPython", "jupyter", "notebook",
+    "setuptools", "_pytest", "IPython", "jupyter", "notebook",
     "tkinter",
 ]
 

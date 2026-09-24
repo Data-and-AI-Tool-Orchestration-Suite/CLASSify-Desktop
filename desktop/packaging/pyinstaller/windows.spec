@@ -1,4 +1,4 @@
-# -*- mode: python ; coding: utf-8 -*-
+﻿# -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for CLASSify Desktop on Windows.
 
 Produces a --onedir bundle with three entry points:
@@ -78,7 +78,6 @@ a_excludes = [
     "pytest",
     "mypy",
     "ruff",
-    "pip",
     "setuptools",
     "_pytest",
     "IPython",
