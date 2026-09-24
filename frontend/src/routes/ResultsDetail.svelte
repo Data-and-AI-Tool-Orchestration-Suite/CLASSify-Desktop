@@ -220,6 +220,47 @@
 
   let lightboxViz = $state<string | null>(null);
 
+  const METRIC_ORDER = [
+    "test_auc",
+    "test_acc",
+    "test_sensitivity",
+    "test_specificity",
+    "test_f1score",
+    "test_kappa",
+    "silhouette_score",
+    "davies_bouldin_score",
+    "calinski_harabasz_score",
+  ];
+
+  let expandedRows = $state<Set<string>>(new Set());
+
+  const primaryCols = $derived(METRIC_ORDER.filter((c) => resultsData.columns.includes(c)));
+
+  const extraCols = $derived(
+    resultsData.columns.filter(
+      (c) => !["model", "features", ...primaryCols].includes(c) && !c.startsWith("shap_"),
+    ),
+  );
+
+  function toggleRow(model: string) {
+    const next = new Set(expandedRows);
+    if (next.has(model)) {
+      next.delete(model);
+    } else {
+      next.add(model);
+    }
+    expandedRows = next;
+  }
+
+  function parseFeatures(raw: string): string[] {
+    const inner = (raw ?? "").replace(/^\[/, "").replace(/\]$/, "");
+    return inner ? inner.split("-").filter(Boolean) : [];
+  }
+
+  function colLabel(col: string): string {
+    return col.replace(/^cvt_/, "CV ").replace(/^trt_/, "Train ").replace(/_/g, " ");
+  }
+
   function vizDownloadUrl(name: string): string {
     return resultsApi.downloadUrl(reportId, `viz/${name}`);
   }
@@ -358,21 +399,78 @@
       {#if activeTab === "table"}
         {#if resultsData.rows.length > 0}
           <div class="table-responsive flex-grow-1" style="overflow: auto; min-height: 0;">
-            <table class="table table-sm table-striped table-hover">
+            <table class="table table-sm table-striped table-hover align-middle">
               <thead class="table-light">
                 <tr>
-                  {#each resultsData.columns as col}
-                    <th title={metricDefs[col] || ""}>{col}</th>
+                  <th>Model</th>
+                  {#each primaryCols as col (col)}
+                    <th class="text-end" title={metricDefs[col] || ""}>{colLabel(col)}</th>
                   {/each}
+                  <th class="text-end"></th>
                 </tr>
               </thead>
               <tbody>
-                {#each resultsData.rows as row}
+                {#each resultsData.rows as row (row.model)}
                   <tr>
-                    {#each resultsData.columns as col}
-                      <td>{row[col] ?? ""}</td>
+                    <td>
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none fw-medium"
+                        onclick={() => toggleRow(row.model)}
+                        title="Show features and all metrics"
+                      >
+                        {row.model}
+                      </button>
+                      <span class="text-muted small ms-1">
+                        ({parseFeatures(row.features ?? "").length} features)
+                      </span>
+                    </td>
+                    {#each primaryCols as col (col)}
+                      <td class="text-end">{row[col] ?? "—"}</td>
                     {/each}
+                    <td class="text-end">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        onclick={() => toggleRow(row.model)}
+                        aria-expanded={expandedRows.has(row.model)}
+                        title={expandedRows.has(row.model) ? "Hide details" : "Show details"}
+                      >
+                        {expandedRows.has(row.model) ? "▲" : "▼"}
+                      </button>
+                    </td>
                   </tr>
+                  {#if expandedRows.has(row.model)}
+                    <tr>
+                      <td colspan={primaryCols.length + 2} class="bg-body-tertiary">
+                        <div class="mb-3">
+                          <div class="small fw-medium mb-1">
+                            Features ({parseFeatures(row.features ?? "").length})
+                          </div>
+                          <div class="d-flex flex-wrap gap-1">
+                            {#each parseFeatures(row.features ?? "") as feat (feat)}
+                              <span class="badge text-bg-light border">{feat}</span>
+                            {/each}
+                          </div>
+                        </div>
+                        {#if extraCols.length > 0}
+                          <div class="small fw-medium mb-1">All metrics</div>
+                          <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2">
+                            {#each extraCols as col (col)}
+                              <div class="col">
+                                <div class="border rounded p-2 h-100 bg-body">
+                                  <div class="small text-muted" title={metricDefs[col] || ""}>
+                                    {col}
+                                  </div>
+                                  <div>{row[col] ?? "—"}</div>
+                                </div>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/if}
                 {/each}
               </tbody>
             </table>
