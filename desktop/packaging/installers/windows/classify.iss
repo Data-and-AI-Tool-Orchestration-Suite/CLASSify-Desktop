@@ -1,10 +1,10 @@
-; CLASSify Desktop — Windows Installer (Inno Setup)
+﻿; CLASSify Desktop â€” Windows Installer (Inno Setup)
 ;
 ; Compile with: iscc classify.iss
 ; Requires the PyInstaller bundle in ..\..\..\dist\CLASSify\
 
 #define MyAppName "CLASSify Desktop"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "UK Center for Applied AI"
 #define MyAppExeName "CLASSify.exe"
 #define MyAppSource "..\..\..\..\dist\CLASSify"

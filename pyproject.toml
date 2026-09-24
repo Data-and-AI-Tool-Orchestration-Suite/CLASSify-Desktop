@@ -1,11 +1,11 @@
-[build-system]
+﻿[build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "classify-desktop"
-version = "1.1.0"
-description = "CLASSify Desktop — local-first ML classification training app"
+version = "1.1.1"
+description = "CLASSify Desktop â€” local-first ML classification training app"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.11"
@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
-    # Data / ML (base — no torch)
+    # Data / ML (base â€” no torch)
     "numpy>=2.0,<3",
     "pandas>=2.2,<3",
     "scipy>=1.13,<2",
@@ -89,7 +89,7 @@ classify-jobworker = "runner.jobworker:main"
 where = ["backend", "desktop"]
 include = ["classify_api*", "classify_desktop*", "ml*", "storage*", "runner*"]
 
-# ────────────────────── Ruff ──────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Ruff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -107,7 +107,7 @@ ignore = ["E501"]  # line length handled by formatter
 [tool.ruff.format]
 quote-style = "double"
 
-# ────────────────────── Mypy ──────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Mypy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -135,7 +135,7 @@ disable_error_code = ["type-arg"]
 module = "classify_desktop.*"
 disable_error_code = ["import-not-found", "name-defined", "attr-defined"]
 
-# ────────────────────── Pytest ──────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Pytest â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

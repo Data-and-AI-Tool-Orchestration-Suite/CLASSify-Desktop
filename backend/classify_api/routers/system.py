@@ -1,4 +1,4 @@
-"""System-level endpoints: health, version, disk usage, update check."""
+﻿"""System-level endpoints: health, version, disk usage, update check."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from classify_api.settings import get_settings
 
 router = APIRouter()
 
-# Stable URL for the update manifest — always redirects to the latest stable release
+# Stable URL for the update manifest â€” always redirects to the latest stable release
 UPDATE_MANIFEST_URL = "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/latest/download/latest.json"
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 
 @router.get("/health")
@@ -166,11 +166,11 @@ def metric_definitions() -> dict[str, object]:
         "trt_sensitivity": "Sensitivity (training set).",
         "trt_specificity": "Specificity (training set).",
         "trt_f1score": "F1 Score (training set).",
-        "cvt_auc": "Cross-validated AUC (mean ± margin of error).",
-        "cvt_acc": "Cross-validated accuracy (mean ± margin of error).",
-        "cvt_sensitivity": "Cross-validated sensitivity (mean ± margin of error).",
-        "cvt_specificity": "Cross-validated specificity (mean ± margin of error).",
-        "cvt_f1score": "Cross-validated F1 score (mean ± margin of error).",
+        "cvt_auc": "Cross-validated AUC (mean Â± margin of error).",
+        "cvt_acc": "Cross-validated accuracy (mean Â± margin of error).",
+        "cvt_sensitivity": "Cross-validated sensitivity (mean Â± margin of error).",
+        "cvt_specificity": "Cross-validated specificity (mean Â± margin of error).",
+        "cvt_f1score": "Cross-validated F1 score (mean Â± margin of error).",
         "best_score": "Best Optuna tuning score for this model.",
         "silhouette_score": "Clustering: how similar an object is to its own cluster vs others. Range [-1, 1], higher is better.",
         "calinski_harabasz_score": "Clustering: ratio of between-cluster to within-cluster dispersion. Higher is better.",
