@@ -46,6 +46,12 @@ class DatasetListResponse(BaseModel):
     data: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DatasetPathUploadRequest(BaseModel):
+    """POST /api/datasets/upload-path — ingest a file already on local disk."""
+
+    path: str
+
+
 class DatasetUploadResponse(BaseModel):
     """POST /api/datasets/upload."""
 

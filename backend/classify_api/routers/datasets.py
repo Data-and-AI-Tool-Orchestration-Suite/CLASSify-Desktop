@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -24,6 +25,7 @@ from classify_api.schemas.datasets import (
     ColumnTypesResponse,
     CommentUpdate,
     DatasetListResponse,
+    DatasetPathUploadRequest,
     DatasetUploadResponse,
     ParametersResponse,
     SuccessResponse,
@@ -61,23 +63,10 @@ def _get_report_or_404(db: Session, report_id: str) -> Any:
 # ── E1: Upload ──
 
 
-@router.post("/upload", response_model=DatasetUploadResponse)
-async def upload_dataset(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
+def _ingest_csv_bytes(
+    db: Session, settings: Settings, raw: bytes, original_filename: str
 ) -> DatasetUploadResponse:
-    """Upload a CSV file, auto-detect column types, create a Report."""
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="File must be a CSV")
-
-    raw = await file.read()
-    if len(raw) > settings.max_upload_mb * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds maximum size of {settings.max_upload_mb} MB",
-        )
-
+    """Ingest raw CSV bytes: detect types, create a Report, store the file."""
     encoding = detect_encoding(raw)
     try:
         text = raw.decode(encoding)
@@ -85,7 +74,7 @@ async def upload_dataset(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}") from e
 
-    filename = _sanitize_filename(file.filename)
+    filename = _sanitize_filename(original_filename)
 
     # Save original data BEFORE detection (get_column_types_internal modifies df in-place)
     original_csv = df.to_csv(index=False)
@@ -104,7 +93,7 @@ async def upload_dataset(
     report = repo.create_report(
         db,
         filename=filename,
-        original_filename=file.filename,
+        original_filename=original_filename,
         status="Preview",
     )
     db.commit()
@@ -121,6 +110,57 @@ async def upload_dataset(
         data_types=result.data_types,
         missing_values=result.missing_values,
     )
+
+
+@router.post("/upload", response_model=DatasetUploadResponse)
+async def upload_dataset(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> DatasetUploadResponse:
+    """Upload a CSV file, auto-detect column types, create a Report."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+
+    raw = await file.read()
+    if len(raw) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum size of {settings.max_upload_mb} MB",
+        )
+
+    return _ingest_csv_bytes(db, settings, raw, file.filename)
+
+
+@router.post("/upload-path", response_model=DatasetUploadResponse)
+def upload_dataset_path(
+    request: DatasetPathUploadRequest,
+    db: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> DatasetUploadResponse:
+    """Ingest a CSV already on local disk (used by native-window file drop).
+
+    The desktop shell runs the API on localhost for the single local user,
+    so a dropped file is handed over as a path instead of a multipart body.
+    """
+    path = Path(request.path)
+    if not path.name.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+    if not path.is_file():
+        raise HTTPException(status_code=400, detail="File not found")
+
+    try:
+        raw = path.read_bytes()
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read file: {e}") from e
+
+    if len(raw) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum size of {settings.max_upload_mb} MB",
+        )
+
+    return _ingest_csv_bytes(db, settings, raw, path.name)
 
 
 # ── E2: Column types ──

@@ -299,6 +299,8 @@ def _convert_best_params(emethod: str, best_params: dict[str, Any]) -> dict[str,
         best_params["learning_rate_init"] = best_params.pop("nn_learning_rate")
     elif emethod == "bagging":
         best_params["max_samples"] = best_params.pop("subsample")
+    elif emethod in ("spectralclustering", "kmeans"):
+        best_params["n_clusters"] = best_params.pop("num_clusters")
     return best_params
 
 

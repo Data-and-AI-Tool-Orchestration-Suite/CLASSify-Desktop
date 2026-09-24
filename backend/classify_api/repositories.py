@@ -270,6 +270,19 @@ def list_recent_actions(db: Session, limit: int = 50) -> list[Action]:
 # ── Utility ──
 
 
+def serialize_datetime(dt: datetime | None) -> str | None:
+    """Serialize a DB datetime as ISO-8601 with an explicit UTC offset.
+
+    SQLite round-trips datetimes without tzinfo, so naive values are
+    interpreted as UTC here; browsers then render them in local time.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
+
+
 def serialize_report(report: Report) -> dict[str, Any]:
     """Convert a Report ORM object to a JSON-serializable dict."""
     return {
@@ -280,7 +293,7 @@ def serialize_report(report: Report) -> dict[str, Any]:
         "job_id": report.job_id,
         "column_changes": report.column_changes,
         "comments": report.comments,
-        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "created_at": serialize_datetime(report.created_at),
     }
 
 
@@ -295,7 +308,7 @@ def serialize_job(job: Job) -> dict[str, Any]:
         "progress_total": job.progress_total,
         "progress_message": job.progress_message,
         "error": job.error,
-        "created_at": job.created_at.isoformat() if job.created_at else None,
-        "started_at": job.started_at.isoformat() if job.started_at else None,
-        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "created_at": serialize_datetime(job.created_at),
+        "started_at": serialize_datetime(job.started_at),
+        "finished_at": serialize_datetime(job.finished_at),
     }

@@ -43,10 +43,10 @@ _RUN_ARTIFACT_SUFFIXES = [
 
 def _archive_run(storage: Any, report_id: str, prev_job_id: str) -> None:
     """Copy run-specific artifacts to an archive dir so reruns preserve history."""
-    archive_prefix = f"{report_id}/archive/{prev_job_id}/"
+    archives_prefix = f"{report_id}/archive/"
     all_keys = storage.list(f"{report_id}/")
     for key in all_keys:
-        if key.startswith(archive_prefix):
+        if key.startswith(archives_prefix):
             continue
         suffix = key[len(f"{report_id}/") :]
         is_run_artifact = (
@@ -56,7 +56,29 @@ def _archive_run(storage: Any, report_id: str, prev_job_id: str) -> None:
             or suffix.startswith("viz/")
         )
         if is_run_artifact:
-            storage.copy(key, f"{archive_prefix}{suffix}")
+            storage.copy(key, f"{archives_prefix}{prev_job_id}/{suffix}")
+
+
+def _clear_run_artifacts(storage: Any, report_id: str) -> None:
+    """Delete previous run's top-level artifacts (they are archived by now).
+
+    Without this, artifacts from earlier runs (viz, SHAP rows, models) linger
+    and leak into the new run's results page.
+    """
+    archives_prefix = f"{report_id}/archive/"
+    all_keys = storage.list(f"{report_id}/")
+    for key in all_keys:
+        if key.startswith(archives_prefix):
+            continue
+        suffix = key[len(f"{report_id}/") :]
+        is_run_artifact = (
+            suffix in _RUN_ARTIFACT_SUFFIXES
+            or suffix.endswith("_model.joblib")
+            or suffix.startswith("shap_rows_")
+            or suffix.startswith("viz/")
+        )
+        if is_run_artifact:
+            storage.delete(key)
 
 
 def run_job(job_id: str) -> int:
@@ -85,10 +107,12 @@ def run_job(job_id: str) -> int:
 
         storage = get_storage()
 
-        # Archive previous run's artifacts if they exist (preserves run history)
+        # Archive previous run's artifacts if they exist (preserves run history),
+        # then clear them so the new run starts from a clean slate.
         prev_job = repo.get_previous_job_by_report(db, report_id, job_id)
         if prev_job and storage.exists(f"{report_id}/results"):
             _archive_run(storage, report_id, prev_job.id)
+        _clear_run_artifacts(storage, report_id)
 
         # Read the processed dataset
         try:
@@ -131,15 +155,32 @@ def run_job(job_id: str) -> int:
         # Run the trainer
         from ml.engine import trainer
 
-        trainer(
-            args=args,
-            storage=storage,
-            full_dataset=df,
-            testset=testset,
-            on_progress=on_progress,
-            log_cb=on_log,
-            cancel_token=cancel_token,
-        )
+        # Process-based joblib backends (loky) deadlock inside frozen apps —
+        # spawn attempts relaunch the bundled exe instead of a worker. Force
+        # thread-based parallelism; identical math, no worker processes.
+        if getattr(sys, "frozen", False):
+            from joblib import parallel_backend
+
+            with parallel_backend("threading"):
+                trainer(
+                    args=args,
+                    storage=storage,
+                    full_dataset=df,
+                    testset=testset,
+                    on_progress=on_progress,
+                    log_cb=on_log,
+                    cancel_token=cancel_token,
+                )
+        else:
+            trainer(
+                args=args,
+                storage=storage,
+                full_dataset=df,
+                testset=testset,
+                on_progress=on_progress,
+                log_cb=on_log,
+                cancel_token=cancel_token,
+            )
 
         # Check if cancelled
         if cancel_token.is_set():
@@ -176,6 +217,9 @@ def run_job(job_id: str) -> int:
 
 def main() -> None:
     """Console-script entry point (``classify-jobworker``)."""
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     if len(sys.argv) < 2:
         print("Usage: classify-jobworker <job_id>", file=sys.stderr)
         sys.exit(2)

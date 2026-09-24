@@ -10,6 +10,8 @@ Produces a --onedir bundle with three entry points:
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
 block_cipher = None
 
 # Repository root (spec file is at desktop/packaging/pyinstaller/)
@@ -17,12 +19,18 @@ repo_root = Path(SPECPATH).parents[2]
 frontend_dist = str(repo_root / "frontend" / "dist")
 migrations_dir = str(repo_root / "backend" / "migrations")
 
+a_binaries = collect_dynamic_libs("xgboost")
+
 a_datas = [
     (frontend_dist, "frontend/dist"),
     (migrations_dir, "migrations"),
-]
+] + collect_data_files("xgboost")
 
 a_hidden_imports = [
+    # App modules referenced by import string (invisible to static analysis)
+    "classify_api",
+    "classify_api.main",
+    "runner.jobworker",
     # FastAPI / Starlette
     "uvicorn.logging",
     "uvicorn.loops.auto",
@@ -87,7 +95,7 @@ a = Analysis(
         str(repo_root / "backend"),
         str(repo_root / "desktop"),
     ],
-    binaries=[],
+    binaries=a_binaries,
     datas=a_datas,
     hiddenimports=a_hidden_imports,
     hookspath=[],
@@ -106,7 +114,7 @@ jobworker_a = Analysis(
         str(repo_root / "backend"),
         str(repo_root / "desktop"),
     ],
-    binaries=[],
+    binaries=a_binaries,
     datas=[],
     hiddenimports=a_hidden_imports,
     hookspath=[],
@@ -143,7 +151,8 @@ jobworker_exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
+    icon=str(repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico") if (repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico").exists() else None,
 )
 
 coll = COLLECT(

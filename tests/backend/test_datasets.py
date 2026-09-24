@@ -57,12 +57,42 @@ class TestUploadDataset:
         assert body["data_types"]["feature_1"] == "float"
         assert body["data_types"]["feature_2"] == "integer"
 
+    def test_upload_path(self, tmp_data_dir: object, tmp_path: object) -> None:
+        csv_path = tmp_path / "dropped.csv"  # type: ignore[attr-defined]
+        csv_path.write_bytes(SMALL_CSV)
+        client = _setup_app(tmp_data_dir)
+        with client:
+            resp = client.post("/api/datasets/upload-path", json={"path": str(csv_path)})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["report_id"] is not None
+        assert body["filename"] == "dropped"
+        assert body["data_types"]["feature_1"] == "float"
+
+    def test_upload_path_missing_file(self, tmp_data_dir: object, tmp_path: object) -> None:
+        client = _setup_app(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/datasets/upload-path",
+                json={"path": str(tmp_path / "nope.csv")},  # type: ignore[attr-defined]
+            )
+        assert resp.status_code == 400
+
+    def test_upload_path_non_csv_rejected(self, tmp_data_dir: object, tmp_path: object) -> None:
+        txt_path = tmp_path / "dropped.txt"  # type: ignore[attr-defined]
+        txt_path.write_bytes(b"a,b\n1,2")
+        client = _setup_app(tmp_data_dir)
+        with client:
+            resp = client.post("/api/datasets/upload-path", json={"path": str(txt_path)})
+        assert resp.status_code == 400
+
     def test_upload_non_csv_rejected(self, tmp_data_dir: object) -> None:
         client = _setup_app(tmp_data_dir)
         with client:
             resp = client.post(
                 "/api/datasets/upload",
-                files={"file": ("test.txt", io.BytesIO(b"hello"), "text/plain")},
+                files={"file": ("test.txt", io.BytesIO(b"a,b\n1,2"), "text/plain")},
             )
         assert resp.status_code == 400
 

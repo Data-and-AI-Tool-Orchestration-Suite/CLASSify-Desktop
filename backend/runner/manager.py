@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import structlog
 
@@ -152,8 +153,11 @@ class JobManager:
         settings = get_settings()
 
         # Build the command
-        python_exe = sys.executable
-        cmd = [python_exe, "-m", "runner.jobworker", job_id]
+        if getattr(sys, "frozen", False):
+            jobworker_exe = Path(sys.executable).parent / "classify-jobworker.exe"
+            cmd = [str(jobworker_exe), job_id]
+        else:
+            cmd = [sys.executable, "-m", "runner.jobworker", job_id]
 
         # Set environment
         env = os.environ.copy()

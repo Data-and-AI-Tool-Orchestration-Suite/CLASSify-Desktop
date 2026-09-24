@@ -4,7 +4,7 @@
 ; Requires the PyInstaller bundle in ..\..\..\dist\CLASSify\
 
 #define MyAppName "CLASSify Desktop"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "UK Center for Applied AI"
 #define MyAppExeName "CLASSify.exe"
 #define MyAppSource "..\..\..\..\dist\CLASSify"
@@ -18,7 +18,7 @@ DefaultDirName={autopf}\CLASSify
 DefaultGroupName=CLASSify
 DisableProgramGroupPage=yes
 OutputDir=..\..\..\..\dist\installers
-OutputBaseFilename=CLASSify-Setup-{#MyAppVersion}-x64
+OutputBaseFilename=CLASSify-Setup-v{#MyAppVersion}-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

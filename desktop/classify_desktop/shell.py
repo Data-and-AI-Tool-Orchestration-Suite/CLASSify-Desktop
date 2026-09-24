@@ -44,12 +44,57 @@ class DesktopShell:
             text_select=False,
         )
         self._window.events.closing += self._on_window_closing
+        self._window.events.loaded += self._setup_file_drop
 
         webview.start(
             debug=self._is_dev(),
             http_server=False,
             func=self._on_started,
         )
+
+    def _setup_file_drop(self) -> None:
+        """Bridge OS file drops into the page.
+
+        WebView2 only exposes dropped files to the host process, so a
+        pywebview DOM drop listener is used to receive real paths, which are
+        then forwarded to the SPA as a ``classify-file-drop`` event.
+        """
+        import time
+
+        from webview.dom import DOMEventHandler
+
+        for attempt in range(10):
+            try:
+                body = self._window.dom.get_element("body")
+                if body is not None:
+                    body.on(
+                        "drop",
+                        DOMEventHandler(self._on_files_dropped, prevent_default=True),
+                    )
+                    log.info("shell.drop_handler_ready")
+                    return
+            except Exception:
+                pass
+            time.sleep(0.5 * (attempt + 1))
+        log.warning("shell.drop_handler_failed")
+
+    def _on_files_dropped(self, event: dict[str, Any]) -> None:
+        """Forward dropped file paths to the SPA."""
+        import json
+
+        paths = []
+        files = event.get("dataTransfer", {}).get("files", []) if event else []
+        for f in files:
+            path = f.get("pywebviewFullPath") if isinstance(f, dict) else None
+            if path:
+                paths.append(path)
+        if not paths:
+            return
+        with contextlib.suppress(Exception):
+            self._window.evaluate_js(
+                "window.dispatchEvent(new CustomEvent('classify-file-drop', "
+                f"{{detail: {json.dumps(paths)}}}))"
+            )
 
     def _build_url(self) -> str:
         """Build the URL to load in the webview."""
@@ -241,12 +286,17 @@ class DesktopShell:
 
 def run_shell() -> None:
     """Entry point — start server, acquire lock, run shell."""
+    from classify_api.logging_setup import configure_logging
+    from classify_api.settings import get_settings
     from classify_desktop.server import start_server
     from classify_desktop.single_instance import acquire_lock
 
     if not acquire_lock():
         print("CLASSify Desktop is already running.", file=sys.stderr)
         sys.exit(0)
+
+    settings = get_settings()
+    configure_logging(dev=settings.dev_mode, log_file=settings.logs_dir / "classify.log")
 
     log.info("shell.starting")
 

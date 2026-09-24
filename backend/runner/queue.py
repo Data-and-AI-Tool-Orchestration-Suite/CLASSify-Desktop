@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from classify_api import repositories as repo
-from classify_api.orm.models import Job
+from classify_api.orm.models import Job, Report
 
 
 def enqueue(db: Session, report_uuid: str, args: dict[str, Any]) -> Job:
@@ -57,6 +57,9 @@ def list_jobs(db: Session) -> list[Job]:
 def mark_stale_jobs_failed(db: Session) -> int:
     """On startup, mark any running/cancelling jobs as failed (interrupted).
 
+    Also reconciles reports stuck in "Processing" whose latest job is already
+    in a terminal state (e.g. the job was failed by an earlier recovery).
+
     Returns the count of stale jobs recovered.
     """
     count = 0
@@ -64,6 +67,26 @@ def mark_stale_jobs_failed(db: Session) -> int:
     for job in jobs:
         if job.state in ("running", "cancelling"):
             repo.update_job_state(db, job.id, "failed", error="Interrupted by app restart")
+            report = repo.get_report(db, job.report_uuid)
+            if report is not None and report.status == "Processing":
+                repo.update_report_status(db, job.report_uuid, "Failed")
+            count += 1
+    if count:
+        db.commit()
+
+    stuck_reports = db.query(Report).filter(Report.status == "Processing").all()
+    for report in stuck_reports:
+        latest = (
+            db.query(Job)
+            .filter(Job.report_uuid == report.uuid)
+            .order_by(Job.created_at.desc())
+            .first()
+        )
+        if latest is None or latest.state != "running":
+            new_status = (
+                "Processed" if latest is not None and latest.state == "succeeded" else "Failed"
+            )
+            repo.update_report_status(db, report.uuid, new_status)
             count += 1
     if count:
         db.commit()

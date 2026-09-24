@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from classify_api.logging_setup import configure_logging
 from classify_api.routers import addons, datasets, jobs, results, system
 from classify_api.settings import get_settings
 
@@ -20,20 +20,7 @@ log = structlog.get_logger()
 
 def _configure_logging(dev: bool) -> None:
     """Configure structlog + stdlib logging."""
-    logging.basicConfig(
-        level=logging.DEBUG if dev else logging.INFO,
-        format="%(message)s",
-    )
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            (structlog.dev.ConsoleRenderer() if dev else structlog.processors.JSONRenderer()),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG if dev else logging.INFO),
-        cache_logger_on_first_use=True,
-    )
+    configure_logging(dev, get_settings().logs_dir / "classify.log")
 
 
 @asynccontextmanager

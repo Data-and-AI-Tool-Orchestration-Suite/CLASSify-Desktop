@@ -361,7 +361,7 @@ def estimator_evaluation(
     except Exception as e:
         _log(f"Error in training {emethod}: {e}", output_f, log_cb)
         traceback.print_exc()
-        results.update({key: -1 for key in results if key != "labels"})
+        results = {"labels": sorted(set(y.tolist()))}
 
     return results, positive_rates
 
@@ -452,7 +452,7 @@ def uns_estimator_evaluation(
     except Exception as e:
         _log(f"Error in clustering {emethod}: {e}", output_f, log_cb)
         traceback.print_exc()
-        results.update({key: -1 for key in results})
+        results = {"labels": []}
 
     return results
 
@@ -472,7 +472,11 @@ def write_report(
 
     models_to_skip = []
     for model in model_results:
-        if not model["results"].get("test_auc") or model["results"].get("best_score") == -1:
+        if model["model"] in CLUSTERING_MODELS:
+            has_metrics = model["results"].get("silhouette_score", -1) != -1
+        else:
+            has_metrics = bool(model["results"].get("test_auc"))
+        if not has_metrics or model["results"].get("best_score") == -1:
             models_to_skip.append(model["model"])
         if not args.parameter_tune:
             model["results"].pop("best_score", None)
@@ -686,7 +690,7 @@ def _supervised_trainer(
                 if on_progress:
                     on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
 
-                if results and len(results) > 0:
+                if results and len(results) > 1:
                     model_stats = {
                         "model": model,
                         "column_key": column_key,
@@ -709,6 +713,12 @@ def _supervised_trainer(
             _log(f"Error writing report: {e}", output_f, log_cb)
     else:
         _log("No model results to report.", output_f, log_cb)
+        if not check_cancel():
+            raise ValueError(
+                "No models were trained — requested: "
+                + ", ".join(args.train_group)
+                + ". Check the output log for skip/error details."
+            )
 
 
 def _unsupervised_trainer(
@@ -763,7 +773,7 @@ def _unsupervised_trainer(
             if on_progress:
                 on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
 
-            if results and len(results) > 0:
+            if results and len(results) > 1:
                 model_stats = {
                     "model": model,
                     "column_key": column_key,
@@ -784,3 +794,9 @@ def _unsupervised_trainer(
             _log(f"Error writing report: {e}", output_f, log_cb)
     else:
         _log("No model results to report.", output_f, log_cb)
+        if not check_cancel():
+            raise ValueError(
+                "No models were trained — requested: "
+                + ", ".join(args.train_group)
+                + ". Check the output log for details."
+            )

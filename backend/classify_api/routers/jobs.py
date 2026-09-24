@@ -32,9 +32,9 @@ def _serialize_job(job: Any) -> JobResponse:
         progress_total=job.progress_total,
         progress_message=job.progress_message,
         error=job.error,
-        created_at=job.created_at.isoformat() if job.created_at else None,
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        created_at=repo.serialize_datetime(job.created_at),
+        started_at=repo.serialize_datetime(job.started_at),
+        finished_at=repo.serialize_datetime(job.finished_at),
     )
 
 

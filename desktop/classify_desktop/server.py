@@ -70,6 +70,7 @@ def start_server(port: int | None = None) -> tuple[str, int, str]:
         host="127.0.0.1",
         port=port,
         log_level="warning",
+        log_config=None,
         reload=False,
         access_log=False,
     )

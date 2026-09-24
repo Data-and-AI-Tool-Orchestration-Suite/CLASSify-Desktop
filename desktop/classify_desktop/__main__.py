@@ -7,11 +7,13 @@ Usage:
 
 from __future__ import annotations
 
+import multiprocessing
 import sys
 
 
 def main() -> None:
     """Console-script entry point (``classify``)."""
+    multiprocessing.freeze_support()
     try:
         from classify_desktop.shell import run_shell
 

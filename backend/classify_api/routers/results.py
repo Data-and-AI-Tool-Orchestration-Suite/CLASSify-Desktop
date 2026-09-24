@@ -361,7 +361,7 @@ def list_runs(
             RunInfo(
                 job_id=job.id,
                 state=job.state,
-                created_at=job.created_at.isoformat() if job.created_at else None,
+                created_at=repo.serialize_datetime(job.created_at),
                 is_current=is_current,
                 args=job.args,
             )
