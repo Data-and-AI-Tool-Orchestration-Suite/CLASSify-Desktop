@@ -1,4 +1,4 @@
-﻿"""Add-on installer service â€” manages torch-gated optional ML packages.
+"""Add-on installer service — manages torch-gated optional ML packages.
 
 Add-ons (TabPFN, SDV) pull torch (~2GB) and are NOT included in the base
 installer.  Users install them on demand via Settings â†’ Add-ons or the
@@ -63,16 +63,16 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
     "tabpfn": AddonManifest(
         name="tabpfn",
         version="2.0.0",
-        description="TabPFN â€” Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download, shared between add-ons and downloaded once). Note: TabPFN 2.5+ also needs a free Prior Labs API key (TABPFN_TOKEN) for model weights.",
+        description="TabPFN — Prior-Data Fitted Networks for tabular classification. Requires torch (~2GB download, shared between add-ons and downloaded once). Note: TabPFN 2.5+ also needs a free Prior Labs API key (TABPFN_TOKEN) for model weights.",
         pip_deps=["torch>=2.3", "tabpfn>=2.0", "huggingface-hub>=0.24"],
-        size_estimate_mb=2500,
+        size_estimate_mb=2500,  # MARKER-TEST-9876,
         min_app_version="1.0.0",
         provides=["tabpfn", "torch"],
     ),
     "sdv": AddonManifest(
         name="sdv",
         version="1.13.0",
-        description="SDV â€” Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch (~2GB download, shared between add-ons and downloaded once).",
+        description="SDV — Synthetic Data Vault for generating synthetic training data (CTGAN, CopulaGAN, TVAE). Requires torch (~2GB download, shared between add-ons and downloaded once).",
         pip_deps=["torch>=2.3", "sdv>=1.13"],
         size_estimate_mb=2200,
         min_app_version="1.0.0",
@@ -260,10 +260,10 @@ def _verify_worker(modules: list[str], addon_dir: str, queue: Any) -> None:
     """
     import importlib
 
-    # faker resolves its locales from sys._MEIPASS when frozen â€” point it
-    # at the add-on dir (see _apply_faker_meipass_override)
+    # faker resolves its data paths via sys.frozen checks — unfreeze in
+    # this single-purpose child so paths resolve from the add-on dir
     if getattr(sys, "frozen", False):
-        sys.__dict__["_MEIPASS"] = addon_dir
+        sys.frozen = False
 
     if addon_dir not in sys.path:
         sys.path.insert(0, addon_dir)
@@ -317,7 +317,7 @@ def _clear_addon_dir(addon_dir: Path) -> bool:
 
 
 def _run_install(name: str) -> None:
-    """Background install worker â€” runs pip and updates status."""
+    """Background install worker — runs pip and updates status."""
     manifest = BUILTIN_ADDONS[name]
     addon_dir = get_addon_dir()
 
@@ -336,7 +336,7 @@ def _run_install(name: str) -> None:
                 _install_status[name].error = msg
 
     try:
-        # Serialize installs â€” only one at a time (shared target directory)
+        # Serialize installs — only one at a time (shared target directory)
         with _install_lock:
             if name in _install_status:
                 _install_status[name].state = "queued"
@@ -355,7 +355,7 @@ def _run_install(name: str) -> None:
         if not others:
             if not _clear_addon_dir(addon_dir):
                 fail(
-                    "Cannot clear previous installation â€” files are locked. "
+                    "Cannot clear previous installation — files are locked. "
                     "Restart the app and try again."
                 )
                 return
@@ -409,7 +409,7 @@ def uninstall_addon(name: str) -> dict[str, Any]:
     """Uninstall an add-on by removing its files from the addon dir.
 
     Note: when other add-ons remain installed, their files (including the
-    shared torch) are kept â€” only the registry entry is removed.
+    shared torch) are kept — only the registry entry is removed.
     """
     if name not in BUILTIN_ADDONS:
         return {"success": False, "message": f"Unknown add-on: {name}"}
@@ -434,7 +434,7 @@ def uninstall_addon(name: str) -> dict[str, Any]:
             log.warning("addon.uninstall_locked", addon=name, error=str(e))
             return {
                 "success": False,
-                "message": "Cannot remove add-on files â€” they are locked. "
+                "message": "Cannot remove add-on files — they are locked. "
                 "Restart the app and try again.",
             }
     else:
@@ -475,41 +475,11 @@ def _remove_stale_faker_junction(addon_dir: Path) -> None:
             log.info("addons.faker_stale_link_removed", path=str(stale_link))
 
 
-def _apply_faker_meipass_override(addon_dir: Path) -> None:
-    """Point ``sys._MEIPASS`` at the add-on dir so faker resolves when frozen.
-
-    faker detects PyInstaller and looks for its providers under
-    ``sys._MEIPASS/faker`` — but add-on packages live in the add-on dir,
-    outside ``_MEIPASS``, so the locale list comes back empty and every
-    ``Faker()`` call raises "Invalid configuration for faker locale".
-
-    Overwriting the process-local ``sys._MEIPASS`` fixes path resolution
-    with no filesystem changes.  Only safe in processes that don't serve
-    the SPA (the static mount resolves via ``sys._MEIPASS``), so the main
-    app must NOT call this — jobworker and verification children only.
-    """
-    if not getattr(sys, "frozen", False):
-        return
-    if not (addon_dir / "faker").is_dir():
-        return
-
-    if getattr(sys, "_MEIPASS", "") == str(addon_dir):
-        return
-    sys.__dict__["_MEIPASS"] = str(addon_dir)
-
-
-def init_addons(apply_faker_override: bool = False) -> None:
-    """Initialize add-ons at app startup — prepend path and log status.
-
-    ``apply_faker_override``: job-side processes (jobworker) must override
-    ``sys._MEIPASS`` so faker resolves during training; the main app must
-    not (its static file mount depends on the real value).
-    """
+def init_addons() -> None:
+    """Initialize add-ons at app startup — prepend path and log status."""
     _prepend_addon_path()
     addon_dir = get_addon_dir()
     _remove_stale_faker_junction(addon_dir)
-    if apply_faker_override:
-        _apply_faker_meipass_override(addon_dir)
     installed = get_installed_addons()
     if installed:
         log.info("addons.loaded", addons=list(installed.keys()))
@@ -529,8 +499,9 @@ def get_addon_status(name: str) -> dict[str, Any]:
     # Verify in a spawned child to avoid locking DLLs in the main process
     addon_dir = get_addon_dir()
     modules_available: dict[str, bool] = {}
+    verify_error: str | None = None
     if installed and addon_dir.exists():
-        ok, _ = _verify_modules(manifest.provides, addon_dir)
+        ok, verify_error = _verify_modules(manifest.provides, addon_dir)
         modules_available = {mod: ok for mod in manifest.provides}
     else:
         modules_available = {mod: False for mod in manifest.provides}
@@ -543,4 +514,5 @@ def get_addon_status(name: str) -> dict[str, Any]:
         "size_estimate_mb": manifest.size_estimate_mb,
         "modules_available": modules_available,
         "all_modules_available": all(modules_available.values()),
+        "verify_error": verify_error,
     }

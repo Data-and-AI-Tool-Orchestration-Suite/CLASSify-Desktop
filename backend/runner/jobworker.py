@@ -114,7 +114,7 @@ def run_job(job_id: str) -> int:
         # training/synthesis; the main app's static mount needs the real path).
         from classify_api.services.addon_service import init_addons
 
-        init_addons(apply_faker_override=True)
+        init_addons()
 
         # Archive previous run's artifacts if they exist (preserves run history),
         # then clear them so the new run starts from a clean slate.
@@ -160,6 +160,12 @@ def run_job(job_id: str) -> int:
             log_lines.append(msg)
             with contextlib.suppress(Exception):
                 storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
+
+        # faker (SDV synthesis) resolves its data paths via sys.frozen
+        # checks — unfreeze for the training phase so add-on packages
+        # resolve from the add-on dir instead of sys._MEIPASS
+        if getattr(sys, "frozen", False):
+            sys.frozen = False
 
         # Run the trainer
         from ml.engine import trainer

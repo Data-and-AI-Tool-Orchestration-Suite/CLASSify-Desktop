@@ -31,9 +31,10 @@ class AddonStatusResponse(BaseModel):
     installed: bool
     version: str
     description: str
-    size_estimate_mb: int
+    size_estimate_mb: int = 0
     modules_available: dict[str, bool] = Field(default_factory=dict)
     all_modules_available: bool = False
+    verify_error: str | None = None
 
 
 class AddonInstallResponse(BaseModel):

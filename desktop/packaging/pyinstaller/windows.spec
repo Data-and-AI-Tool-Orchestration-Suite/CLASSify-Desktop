@@ -27,41 +27,35 @@ a_datas = [
 ] + collect_data_files("xgboost") + collect_data_files("pip", include_py_files=True)
 
 
-def _pip_stdlib_hidden():
-    """Stdlib modules pip imports at runtime (pip ships as disk data)."""
-    import ast as _ast
 
-    import sys as _sys
 
-    import pip as _pip
+def _collect_stdlib_modules():
+    """Every stdlib module + submodule, so frozen processes (app, jobworker,
+    spawned verification children, in-process pip) always find all imports."""
+    import pkgutil as _pkgutil
 
-    root = Path(_pip.__path__[0])
-    names = set()
-    for py_file in root.rglob("*.py"):
-        try:
-            tree = _ast.parse(py_file.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
+    skip = {"antigravity", "this"}
+    found = set()
+    for top in sorted(getattr(__import__("sys"), "stdlib_module_names")):
+        if top in skip or top.startswith("_"):
+            found.add(top)
             continue
-        for node in _ast.walk(tree):
-            if isinstance(node, _ast.Import):
-                for alias in node.names:
-                    names.add(alias.name)
-            elif isinstance(node, _ast.ImportFrom) and node.module and node.level == 0:
-                names.add(node.module)
-    hidden = set()
-    for name in names:
-        if name.split(".")[0] in _sys.stdlib_module_names:
-            hidden.add(name)
-            while "." in name:
-                name = name.rsplit(".", 1)[0]
-                hidden.add(name)
-    return sorted(hidden)
-
+        found.add(top)
+        try:
+            module = __import__(top)
+            if hasattr(module, "__path__"):
+                for info in _pkgutil.walk_packages(module.__path__, prefix=top + "."):
+                    found.add(info.name)
+        except Exception:
+            continue
+    return sorted(found)
 
 a_hidden_imports = [
+    # full stdlib: addon packages (torch/tabpfn/sdv) and in-process
+    # pip import stdlib modules dynamically (http.client, unittest.result, ...)
+    *_collect_stdlib_modules(),
     # stdlib modules pip needs at runtime (pip is a disk package,
     # so its imports are not analyzed — compute them from its source)
-    *_pip_stdlib_hidden(),
     # App modules referenced by import string (invisible to static analysis)
     "classify_api",
     "classify_api.main",

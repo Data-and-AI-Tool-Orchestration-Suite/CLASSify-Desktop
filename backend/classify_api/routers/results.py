@@ -1,4 +1,4 @@
-"""Results & re-test endpoints â€” serves data for the results detail page.
+"""Results & re-test endpoints — serves data for the results detail page.
 
 Tabs: Results Table, Visualizations, Download Data, Re-Test Models,
 Prediction Insights (SHAP), Output Log.
@@ -156,7 +156,7 @@ def get_shap_row_graph_endpoint(
     """Generate a per-row SHAP impact bar chart PNG."""
     _get_report_or_404(db, report_id)
 
-    # Heavy viz imports stay lazy â€” matplotlib/shap are add-on-tier deps
+    # Heavy viz imports stay lazy — matplotlib/shap are add-on-tier deps
     from ml.shap_explain import get_shap_row_graph
 
     storage = get_storage()
@@ -198,7 +198,7 @@ async def retest_models(
     storage.put_text(f"{report_id}/retest", csv_buf.getvalue())
 
     try:
-        # Heavy model-loading imports stay lazy â€” sklearn/joblib live in the
+        # Heavy model-loading imports stay lazy — sklearn/joblib live in the
         # job-side dependency set for this endpoint
         from ml.retest import retest
 

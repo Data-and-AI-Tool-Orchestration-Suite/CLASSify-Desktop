@@ -1,4 +1,4 @@
-; CLASSify Desktop â€” Windows Installer (Inno Setup)
+; CLASSify Desktop — Windows Installer (Inno Setup)
 ;
 ; Compile with: iscc classify.iss
 ; Requires the PyInstaller bundle in ..\..\..\dist\CLASSify\

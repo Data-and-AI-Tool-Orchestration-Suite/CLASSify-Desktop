@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "classify-desktop"
 version = "1.2.0"
-description = "CLASSify Desktop â€” local-first ML classification training app"
+description = "CLASSify Desktop — local-first ML classification training app"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.11"
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
-    # Data / ML (base â€” no torch)
+    # Data / ML (base — no torch)
     "numpy>=2.0,<3",
     "pandas>=2.2,<3",
     "scipy>=1.13,<2",
