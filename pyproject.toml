@@ -12,6 +12,11 @@ requires-python = ">=3.11"
 authors = [{ name = "UK Center for Applied AI" }]
 
 dependencies = [
+    # Data handling (required by the API itself, not just the ML engine)
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "joblib>=1.4",
+    "charset-normalizer>=3.3",
     # Web server
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -57,6 +62,7 @@ desktop = [
     "pywebview>=5.3",
 ]
 dev = [
+    "classify-desktop[ml]",
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
@@ -109,7 +115,7 @@ quote-style = "double"
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Mypy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -152,4 +158,6 @@ filterwarnings = [
     "ignore::DeprecationWarning:matplotlib.*",
     "ignore::FutureWarning:pandas.*",
     "ignore::UserWarning:sklearn.*",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore::PendingDeprecationWarning",
 ]

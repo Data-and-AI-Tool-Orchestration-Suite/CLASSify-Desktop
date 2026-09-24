@@ -52,7 +52,7 @@ def plot_clusters(
     n_clusters = len(unique_labels)
     if -1 in unique_labels:
         n_clusters -= 1
-    colors = plt.cm.viridis(np.linspace(0, 1, n_clusters))  # type: ignore[attr-defined]
+    colors = plt.cm.viridis(np.linspace(0, 1, n_clusters))
 
     for i, label in enumerate(unique_labels):
         if label == -1:

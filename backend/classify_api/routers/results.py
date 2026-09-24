@@ -1,4 +1,4 @@
-"""Results & re-test endpoints — serves data for the results detail page.
+"""Results & re-test endpoints â€” serves data for the results detail page.
 
 Tabs: Results Table, Visualizations, Download Data, Re-Test Models,
 Prediction Insights (SHAP), Output Log.
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from classify_api import repositories as repo
 from classify_api.db import get_session
+from classify_api.orm.models import Job
 from classify_api.schemas.results import (
     OutputLogResponse,
     PrepareParamsResponse,
@@ -28,8 +29,6 @@ from classify_api.schemas.results import (
     VizListResponse,
 )
 from ml.column_types import detect_encoding
-from ml.retest import retest
-from ml.shap_explain import get_shap_row_graph
 from storage.base import KeyNotFound
 from storage.factory import get_storage
 
@@ -43,7 +42,7 @@ def _get_report_or_404(db: Session, report_id: str) -> Any:
     return report
 
 
-# ── G1: Results table (report.csv) ──
+# â”€â”€ G1: Results table (report.csv) â”€â”€
 
 
 @router.get("/{report_id}", response_model=ResultsResponse)
@@ -81,7 +80,7 @@ def get_results(
     )
 
 
-# ── G2: Visualizations ──
+# â”€â”€ G2: Visualizations â”€â”€
 
 
 @router.get("/{report_id}/viz", response_model=VizListResponse)
@@ -118,7 +117,7 @@ def get_visualization(
     return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
 
 
-# ── G3: SHAP rows ──
+# â”€â”€ G3: SHAP rows â”€â”€
 
 
 @router.get("/{report_id}/shap-rows/{model}", response_model=ShapRowsResponse)
@@ -142,7 +141,7 @@ def get_shap_rows(
     return ShapRowsResponse(success=True, rows=rows, columns=columns)
 
 
-# ── G4: SHAP row graph ──
+# â”€â”€ G4: SHAP row graph â”€â”€
 
 
 @router.get("/{report_id}/shap-row-graph")
@@ -157,6 +156,9 @@ def get_shap_row_graph_endpoint(
     """Generate a per-row SHAP impact bar chart PNG."""
     _get_report_or_404(db, report_id)
 
+    # Heavy viz imports stay lazy â€” matplotlib/shap are add-on-tier deps
+    from ml.shap_explain import get_shap_row_graph
+
     storage = get_storage()
     png_bytes = get_shap_row_graph(storage, report_id, model, row_num, train_test, class_column)
     if png_bytes is None:
@@ -165,7 +167,7 @@ def get_shap_row_graph_endpoint(
     return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
 
 
-# ── G5: Re-test ──
+# â”€â”€ G5: Re-test â”€â”€
 
 
 @router.post("/{report_id}/retest", response_model=RetestResponse)
@@ -196,6 +198,10 @@ async def retest_models(
     storage.put_text(f"{report_id}/retest", csv_buf.getvalue())
 
     try:
+        # Heavy model-loading imports stay lazy â€” sklearn/joblib live in the
+        # job-side dependency set for this endpoint
+        from ml.retest import retest
+
         result = retest(
             storage=storage,
             model_names=request.model_names,
@@ -218,7 +224,7 @@ async def retest_models(
         return RetestResponse(success=False, message=error_str)
 
 
-# ── G6: Output log ──
+# â”€â”€ G6: Output log â”€â”€
 
 
 @router.get("/{report_id}/output-log", response_model=OutputLogResponse)
@@ -238,7 +244,7 @@ def get_output_log(
     return OutputLogResponse(success=True, log=log_text)
 
 
-# ── G7: Download artifact ──
+# â”€â”€ G7: Download artifact â”€â”€
 
 
 @router.get("/{report_id}/download")
@@ -294,7 +300,7 @@ def download_artifact(
     )
 
 
-# ── G8: Prepare params (rerun with previous) ──
+# â”€â”€ G8: Prepare params (rerun with previous) â”€â”€
 
 
 @router.get("/{report_id}/prepare-params", response_model=PrepareParamsResponse)
@@ -319,7 +325,7 @@ def get_prepare_params(
     )
 
 
-# ── G9: Run history ──
+# â”€â”€ G9: Run history â”€â”€
 
 
 def _archive_prefix(report_id: str, job_id: str) -> str:
@@ -341,10 +347,7 @@ def list_runs(
     runs: list[RunInfo] = []
 
     all_jobs = (
-        db.query(repo.Job)
-        .filter(repo.Job.report_uuid == report_id)
-        .order_by(repo.Job.created_at.desc())
-        .all()
+        db.query(Job).filter(Job.report_uuid == report_id).order_by(Job.created_at.desc()).all()
     )
 
     for job in all_jobs:

@@ -155,7 +155,7 @@ class TestAddonInstallMocked:
 
         with (
             patch("subprocess.run", return_value=mock_result),
-            patch.object(addon_service, "_verify_in_subprocess", return_value=(True, None)),
+            patch.object(addon_service, "_verify_modules", return_value=(True, None)),
             patch.object(addon_service, "_clear_addon_dir", return_value=True),
         ):
             _run_install("tabpfn")

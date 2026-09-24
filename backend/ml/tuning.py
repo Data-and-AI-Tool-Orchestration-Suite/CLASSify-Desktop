@@ -8,7 +8,7 @@ hyperparameters and evaluates them using cross-validation.
 from __future__ import annotations
 
 from functools import partial
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import optuna
@@ -312,7 +312,7 @@ def run_tuning(
     output_f: Any,
 ) -> tuple[dict[str, Any], float]:
     """Run Optuna tuning and return (best_params, best_score)."""
-    direction = "maximize"
+    direction: Literal["minimize", "maximize"] = "maximize"
     if (
         hasattr(args, "clustering_parameter_goal")
         and args.clustering_parameter_goal

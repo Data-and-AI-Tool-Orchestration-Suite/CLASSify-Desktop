@@ -16,6 +16,7 @@ import datetime
 import json
 import os
 import urllib.request
+from typing import Any
 
 ASSET_NAMES = {
     "windows-x64": "CLASSify-Setup-{tag}-x64.exe",
@@ -24,7 +25,7 @@ ASSET_NAMES = {
 }
 
 
-def fetch_release_assets(repo: str, tag: str) -> dict[str, dict[str, object]]:
+def fetch_release_assets(repo: str, tag: str) -> dict[str, dict[str, Any]]:
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     token = os.environ.get("GITHUB_TOKEN", "")
     headers = {"Accept": "application/vnd.github+json"}
@@ -53,7 +54,7 @@ def main() -> None:
     tag = args.version
     base = f"https://github.com/{args.repo}/releases/download/{tag}"
 
-    assets: dict[str, dict[str, object]] = {}
+    assets: dict[str, dict[str, Any]] = {}
     if args.from_release:
         release_assets = fetch_release_assets(args.repo, tag)
         for platform, name_template in ASSET_NAMES.items():

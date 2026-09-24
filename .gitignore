@@ -78,3 +78,5 @@ config.local.ini
 secrets/
 
 openapi.json
+
+.venv-ci/
