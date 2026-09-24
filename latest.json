@@ -1,24 +1,24 @@
-﻿{
-    "version":  "1.1.0",
-    "released_at":  "2026-09-24T13:00:10.623610Z",
+{
+    "version":  "1.1.1",
+    "released_at":  "2026-09-24T15:26:07.202123Z",
     "channel":  "stable",
     "minimum_upgrade_from":  "0.0.0",
     "assets":  {
                    "windows-x64":  {
-                                       "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.0/CLASSify-Setup-v1.1.0-x64.exe",
-                                       "sha256":  "6f4dccc0df395c7a3df510795d13666d83209c16666ebbc297a5e1425f287038",
-                                       "size":  202407905
+                                       "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.1/CLASSify-Setup-v1.1.1-x64.exe",
+                                       "sha256":  "b77f787a6a0c3f4435ce62a9a23ca1cbd6cd52434cb476e116120591d122f973",
+                                       "size":  203630309
                                    },
                    "macos-universal2":  {
-                                            "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.0/CLASSify-v1.1.0-macos.zip",
-                                            "sha256":  "da14f39192a87672c52c6a0c4918f4eec7db9fd5ef064debebce091b9994778c",
-                                            "size":  192657453
+                                            "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.1/CLASSify-v1.1.1-macos.zip",
+                                            "sha256":  "b77b84e6df95269e33974f3e2498bbcbb1a0108694c1ecc3aed47801913e334c",
+                                            "size":  194599690
                                         },
                    "linux-x86_64-appimage":  {
-                                                 "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.0/CLASSify-v1.1.0-linux.tar.gz",
-                                                 "sha256":  "6ff062bfa0752790f508bdc2fba3a0127f18dc68d1d191464a0d5f6831d70e7e",
-                                                 "size":  604888628
+                                                 "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.1.1/CLASSify-v1.1.1-linux.tar.gz",
+                                                 "sha256":  "0c47f255d13c64f901c75016ab42722d6b728c6273cae950c432604869876b61",
+                                                 "size":  606653290
                                              }
                },
-    "notes":  "CLASSify Desktop v1.1.0"
+    "notes":  "CLASSify Desktop v1.1.1"
 }
