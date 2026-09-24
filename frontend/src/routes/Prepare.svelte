@@ -94,7 +94,7 @@
     supervised = mode;
     // Keep the selection consistent when switching learning mode
     const allowed = mode ? ALL_SUPERVISED_MODELS : UNSUPERVISED_MODELS;
-    trainGroup = trainGroup.filter((m) => allowed.includes(m));
+    trainGroup = trainGroup.filter((m) => allowed.includes(m) && modelAvailable(m));
   }
 
   const startDisabledReason = $derived.by(() => {
@@ -213,6 +213,11 @@
         if (typeof prevArgs.class_column === "string") classColumn = prevArgs.class_column;
       }
 
+      // Load add-on availability and prune unavailable models (e.g. TabPFN
+      // without its add-on) from the selection
+      await loadAddons();
+      trainGroup = trainGroup.filter((m) => modelAvailable(m));
+
       // Load existing column configuration (if previously saved)
       const savedChanges = report.column_changes?.changes as ColumnChange[] | undefined;
       if (savedChanges && Array.isArray(savedChanges) && savedChanges.length > 0) {
@@ -249,6 +254,7 @@
   });
 
   function toggleModel(model: string) {
+    if (!modelAvailable(model)) return;
     if (trainGroup.includes(model)) {
       trainGroup = trainGroup.filter((m) => m !== model);
     } else {
@@ -257,7 +263,7 @@
   }
 
   function selectAllModels() {
-    trainGroup = [...activeModels];
+    trainGroup = activeModels.filter(modelAvailable);
   }
 
   function clearModels() {
