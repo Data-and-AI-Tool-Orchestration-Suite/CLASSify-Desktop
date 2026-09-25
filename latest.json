@@ -1,24 +1,24 @@
 {
-    "version":  "1.2.0",
-    "released_at":  "2026-09-24T18:30:14.355977Z",
-    "channel":  "stable",
-    "minimum_upgrade_from":  "0.0.0",
-    "assets":  {
-                   "windows-x64":  {
-                                       "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.0/CLASSify-Setup-v1.2.0-x64.exe",
-                                       "sha256":  "df414fe99e932545f6ba4cb4bfb22ee8f7714ab67e7d7a9e911502f6cfe1f54f",
-                                       "size":  203575431
-                                   },
-                   "macos-universal2":  {
-                                            "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.0/CLASSify-v1.2.0-macos.zip",
-                                            "sha256":  "263d3df8d33621327696da9ae0f60b034598ef70481238d1508f202f89ed2c33",
-                                            "size":  194605865
-                                        },
-                   "linux-x86_64-appimage":  {
-                                                 "url":  "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.0/CLASSify-v1.2.0-linux.tar.gz",
-                                                 "sha256":  "e10b709fd62219ee38b23a923691c2be6e44fec5eafdbddb8c922b7d93c2a878",
-                                                 "size":  606658999
-                                             }
-               },
-    "notes":  "CLASSify Desktop v1.2.0"
+  "version": "1.2.3",
+  "released_at": "2026-09-25T16:19:13.914117Z",
+  "channel": "stable",
+  "minimum_upgrade_from": "0.0.0",
+  "assets": {
+    "windows-x64": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.3/CLASSify-Setup-v1.2.3-x64.exe",
+      "sha256": "160775035feea97575cf5cff105ad88f43a417ea01515737b8c8a2264a09212f",
+      "size": 209002527
+    },
+    "macos-universal2": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.3/CLASSify-v1.2.3-macos.zip",
+      "sha256": "1132da9d3d597e5ffa60c4045ed72a797222bf91050058f1acb693c176ecca2f",
+      "size": 201019869
+    },
+    "linux-x86_64-appimage": {
+      "url": "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/download/v1.2.3/CLASSify-v1.2.3-linux.tar.gz",
+      "sha256": "f7b65c568406a4d10b8a3c68fabebcd191fdb34d66945eefd29ce502b891b020",
+      "size": 616778077
+    }
+  },
+  "notes": "CLASSify Desktop v1.2.3"
 }
