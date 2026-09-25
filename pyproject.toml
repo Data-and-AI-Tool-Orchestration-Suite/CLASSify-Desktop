@@ -158,6 +158,9 @@ filterwarnings = [
     "ignore::DeprecationWarning:matplotlib.*",
     "ignore::FutureWarning:pandas.*",
     "ignore::UserWarning:sklearn.*",
+    # Optuna "range is not divisible by step" fires from the min_samples
+    # range (5..200 step 2) in clustering tuning — attributed to ml.tuning
+    "ignore::UserWarning:ml.tuning",
     "ignore::starlette.exceptions.StarletteDeprecationWarning",
     "ignore::PendingDeprecationWarning",
 ]

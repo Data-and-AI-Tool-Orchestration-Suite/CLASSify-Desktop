@@ -248,23 +248,23 @@ def objective(trial: optuna.Trial, emethod: str, args: Any, X: Any, y: Any, outp
     if emethod in ("spectralclustering", "kmeans", "hdbscan"):
         from sklearn import metrics as skmetrics
 
-        labels = estimator.fit_predict(X)
+        # davies_bouldin is minimized (lower is better), so a failed trial
+        # must score WORST (1000.0); the maximize-style metrics score -1.0.
+        goal = args.clustering_parameter_goal[0] if args.clustering_parameter_goal else ""
+        failure_score = 1000.0 if goal == "davies_bouldin_score" else -1.0
         try:
-            if args.clustering_parameter_goal[0] == "silhouette_score":
-                if len(set(labels)) > 1:
-                    return float(skmetrics.silhouette_score(X, labels))
-                return -1.0
-            elif args.clustering_parameter_goal[0] == "calinski_harabasz_score":
-                if len(set(labels)) > 1:
-                    return float(skmetrics.calinski_harabasz_score(X, labels))
-                return -1.0
-            elif args.clustering_parameter_goal[0] == "davies_bouldin_score":
-                if len(set(labels)) > 1:
-                    return float(skmetrics.davies_bouldin_score(X, labels))
-                return 1000.0  # High = bad (minimize)
+            labels = estimator.fit_predict(X)
+            if len(set(labels)) <= 1:
+                return failure_score
+            if goal == "silhouette_score":
+                return float(skmetrics.silhouette_score(X, labels))
+            elif goal == "calinski_harabasz_score":
+                return float(skmetrics.calinski_harabasz_score(X, labels))
+            elif goal == "davies_bouldin_score":
+                return float(skmetrics.davies_bouldin_score(X, labels))
+            return failure_score
         except Exception:
-            return -1.0
-        return -1.0
+            return failure_score
 
     # For supervised, use cross-validated score
     goal = args.parameter_goal[0] if hasattr(args, "parameter_goal") else "f1_macro"
@@ -326,6 +326,6 @@ def run_tuning(
     objective_with_params = partial(
         objective, emethod=emethod, args=args, X=X, y=y, output_f=output_f
     )
-    study.optimize(objective_with_params, n_trials=args.n_iter)
+    study.optimize(objective_with_params, n_trials=args.n_iter, catch=(Exception,))
     best_params = _convert_best_params(emethod, dict(study.best_trial.params))
     return best_params, float(study.best_value)

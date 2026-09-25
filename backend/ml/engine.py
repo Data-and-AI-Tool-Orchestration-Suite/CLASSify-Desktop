@@ -463,10 +463,11 @@ def write_report(
     storage: Storage,
     filename: str,
     positive_rates: dict,
-) -> None:
+) -> int:
     """Generate the final report CSV and visualizations.
 
     Preserved from CLASSify-2's write_report.
+    Returns the number of models included in the report (0 = all skipped).
     """
     hascluster, othermodels = hasclustermodel(args)
 
@@ -519,6 +520,8 @@ def write_report(
         if not args.supervised:
             label_file(model_results, storage, filename)
         visualize(df, storage, filename, args, positive_rates, multiclass)
+
+    return len(df)
 
 
 def trainer(
@@ -706,19 +709,23 @@ def _supervised_trainer(
                 traceback.print_exc()
 
     # Write report
+    report_rows = 0
     if model_results:
         try:
-            write_report(args, model_results, storage, filename, overall_positive_rates)
+            report_rows = write_report(
+                args, model_results, storage, filename, overall_positive_rates
+            )
         except Exception as e:
             _log(f"Error writing report: {e}", output_f, log_cb)
     else:
         _log("No model results to report.", output_f, log_cb)
-        if not check_cancel():
-            raise ValueError(
-                "No models were trained — requested: "
-                + ", ".join(args.train_group)
-                + ". Check the output log for skip/error details."
-            )
+
+    if report_rows == 0 and not check_cancel():
+        raise ValueError(
+            "No models were trained — requested: "
+            + ", ".join(args.train_group)
+            + ". Check the output log for skip/error details."
+        )
 
 
 def _unsupervised_trainer(
@@ -787,16 +794,18 @@ def _unsupervised_trainer(
             _log(f"Error in train/evaluation of {model}: {e}", output_f, log_cb)
             traceback.print_exc()
 
+    report_rows = 0
     if model_results:
         try:
-            write_report(args, model_results, storage, filename, {})
+            report_rows = write_report(args, model_results, storage, filename, {})
         except Exception as e:
             _log(f"Error writing report: {e}", output_f, log_cb)
     else:
         _log("No model results to report.", output_f, log_cb)
-        if not check_cancel():
-            raise ValueError(
-                "No models were trained — requested: "
-                + ", ".join(args.train_group)
-                + ". Check the output log for details."
-            )
+
+    if report_rows == 0 and not check_cancel():
+        raise ValueError(
+            "No models were trained — requested: "
+            + ", ".join(args.train_group)
+            + ". Check the output log for details."
+        )

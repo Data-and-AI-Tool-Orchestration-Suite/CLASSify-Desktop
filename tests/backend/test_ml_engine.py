@@ -214,6 +214,95 @@ class TestEngineGoldenDataset:
         viz_keys = ml_storage.list(f"{report_id}/viz/")
         assert len(viz_keys) > 0, "No clustering visualizations created"
 
+    def test_unsupervised_tuning_survives_failed_trials(
+        self, golden_df: pd.DataFrame, ml_storage: LocalStorage
+    ) -> None:
+        """Unsupervised with parameter tuning (the frontend default).
+
+        Regression: a single failing Optuna trial (e.g. spectral clustering
+        sampling n_neighbors > n_samples) used to abort the whole study and
+        silently drop the model from the results.  Failed trials must be
+        skipped so every tunable clustering model still trains.
+        """
+        report_id = "test-cluster-tuned"
+        cluster_df = golden_df.drop(columns=["class"])
+        ml_storage.write_csv(f"{report_id}/file", cluster_df, index=False)
+
+        args = TrainingArgs(
+            supervised=False,
+            train_group=["spectralclustering", "kmeans"],
+            parameter_tune=True,
+            n_iter=5,
+            visualize=False,
+            random_state=42,
+            class_column=None,
+            report_uuid=report_id,
+            n_jobs=1,
+        )
+
+        trainer(
+            args=args,
+            storage=ml_storage,
+            full_dataset=cluster_df.copy(),
+            testset=None,
+        )
+
+        assert ml_storage.exists(f"{report_id}/results")
+        report_df = ml_storage.read_csv(f"{report_id}/results")
+        models = report_df["model"].tolist()
+        assert "spectralclustering" in models, f"spectralclustering missing: {models}"
+        assert "kmeans" in models, f"kmeans missing: {models}"
+
+    def test_unsupervised_without_class_column(
+        self, golden_df: pd.DataFrame, ml_storage: LocalStorage
+    ) -> None:
+        """A dataset with no class column at all trains unsupervised."""
+        report_id = "test-cluster-noclass"
+        cluster_df = golden_df.drop(columns=["class"])
+        ml_storage.write_csv(f"{report_id}/file", cluster_df, index=False)
+
+        args = TrainingArgs(
+            supervised=False,
+            train_group=["kmeans"],
+            parameter_tune=False,
+            visualize=False,
+            class_column=None,
+            report_uuid=report_id,
+            n_jobs=1,
+        )
+
+        trainer(args=args, storage=ml_storage, full_dataset=cluster_df.copy(), testset=None)
+
+        report_df = ml_storage.read_csv(f"{report_id}/results")
+        assert report_df.iloc[0]["model"] == "kmeans"
+
+    def test_unsupervised_all_models_skipped_raises(
+        self, golden_df: pd.DataFrame, ml_storage: LocalStorage
+    ) -> None:
+        """When every clustering model is skipped, the job fails loudly.
+
+        Regression: all-skipped runs used to write an empty report and the
+        job still reported success.
+        """
+        report_id = "test-cluster-allnoise"
+        cluster_df = golden_df.drop(columns=["class"])
+        ml_storage.write_csv(f"{report_id}/file", cluster_df, index=False)
+
+        args = TrainingArgs(
+            supervised=False,
+            train_group=["hdbscan"],
+            parameter_tune=False,
+            visualize=False,
+            # min_cluster_size 50 on a 20-row dataset → every point is noise
+            min_cluster_size_start=50,
+            min_samples_start=20,
+            report_uuid=report_id,
+            n_jobs=1,
+        )
+
+        with pytest.raises(ValueError, match="No models were trained"):
+            trainer(args=args, storage=ml_storage, full_dataset=cluster_df.copy(), testset=None)
+
     def test_output_log_contains_progress(
         self, golden_df: pd.DataFrame, ml_storage: LocalStorage
     ) -> None:
