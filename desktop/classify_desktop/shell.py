@@ -114,10 +114,67 @@ class DesktopShell:
 
     def _on_started(self) -> None:
         """Called after the webview window is created."""
+        self._apply_window_icon()
         log.info("shell.window_ready")
 
         if self._is_dev():
             self._window.evaluate_js("document.title = 'CLASSify Desktop (Dev)'")
+
+    def _apply_window_icon(self) -> None:
+        """Set the title-bar/taskbar icon for the native window.
+
+        pywebview does not expose a window-icon API, so the icon is applied
+        directly via WM_SETICON.  The frozen exe already embeds the icon via
+        the PyInstaller spec; this covers windowed runs (python -m).
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            from classify_desktop.server import get_app_icon
+
+            icon_path = get_app_icon()
+            if not icon_path:
+                log.warning("shell.icon_not_found")
+                return
+
+            import ctypes
+
+            hwnd = self._get_native_hwnd()
+            if not hwnd:
+                log.warning("shell.icon_window_not_found")
+                return
+
+            user32 = ctypes.windll.user32
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x00000010
+            hicon = user32.LoadImageW(None, str(icon_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
+            if not hicon:
+                log.warning("shell.icon_load_failed")
+                return
+
+            WM_SETICON = 0x0080
+            ICON_SMALL = 0
+            ICON_BIG = 1
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+            log.info("shell.icon_applied", icon=str(icon_path))
+        except Exception as e:
+            log.warning("shell.icon_apply_failed", error=str(e))
+
+    def _get_native_hwnd(self) -> int | None:
+        """Best-effort native window handle for the main webview window."""
+        import ctypes
+
+        window = self._window
+        for attr_chain in (("native", "Handle"), ("gui", "hwnd")):
+            with contextlib.suppress(Exception):
+                obj: Any = window
+                for attr in attr_chain:
+                    obj = getattr(obj, attr)
+                if obj:
+                    return int(obj)
+        hwnd = ctypes.windll.user32.FindWindowW(None, "CLASSify Desktop")
+        return int(hwnd) or None
 
     def _on_window_closing(self) -> bool:
         """Handle window close — prompt if jobs are running.

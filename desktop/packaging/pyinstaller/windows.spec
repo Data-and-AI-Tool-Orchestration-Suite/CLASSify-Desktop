@@ -18,12 +18,14 @@ block_cipher = None
 repo_root = Path(SPECPATH).parents[2]
 frontend_dist = str(repo_root / "frontend" / "dist")
 migrations_dir = str(repo_root / "backend" / "migrations")
+app_icon = repo_root / "desktop" / "assets" / "classify_icon.ico"
 
 a_binaries = collect_dynamic_libs("xgboost")
 
 a_datas = [
     (frontend_dist, "frontend/dist"),
     (migrations_dir, "migrations"),
+    (str(app_icon), "."),
 ] + collect_data_files("xgboost") + collect_data_files("pip", include_py_files=True)
 
 
@@ -167,7 +169,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon=str(repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico") if (repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico").exists() else None,
+    icon=str(app_icon) if app_icon.exists() else None,
 )
 
 jobworker_exe = EXE(
@@ -181,7 +183,7 @@ jobworker_exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon=str(repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico") if (repo_root / "desktop" / "packaging" / "assets" / "classify_icon.ico").exists() else None,
+    icon=str(app_icon) if app_icon.exists() else None,
 )
 
 coll = COLLECT(

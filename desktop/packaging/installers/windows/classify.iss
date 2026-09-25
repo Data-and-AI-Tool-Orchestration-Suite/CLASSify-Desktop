@@ -17,6 +17,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\CLASSify
 DefaultGroupName=CLASSify
 DisableProgramGroupPage=yes
+SetupIconFile=..\..\assets\classify_icon.ico
 OutputDir=..\..\..\..\dist\installers
 OutputBaseFilename=CLASSify-Setup-v{#MyAppVersion}-x64
 Compression=lzma2
