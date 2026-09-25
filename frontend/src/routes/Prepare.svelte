@@ -169,9 +169,27 @@
           if (typeof prevArgs.supervised === "boolean") {
             supervised = prevArgs.supervised;
           }
+          if (typeof prevArgs.class_column === "string") {
+            classColumn = prevArgs.class_column;
+          }
         }
       } catch {
         // No previous params — use defaults
+      }
+
+      // Load existing column configuration (if previously saved)
+      const savedChanges = report.column_changes?.changes as ColumnChange[] | undefined;
+      if (savedChanges && Array.isArray(savedChanges) && savedChanges.length > 0) {
+        columnChanges = savedChanges;
+        const classCol = savedChanges.find((c) => c.is_class);
+        // The saved column configuration is the source of truth for the
+        // target: it wins over previous run args.
+        classColumn = classCol?.column ?? "";
+        if (!classCol) {
+          // No target column configured — this dataset is set up for
+          // unsupervised training regardless of previous runs.
+          supervised = false;
+        }
       }
 
       const options = supervised
@@ -212,21 +230,12 @@
         if (typeof prevArgs.repeats === "number") repeats = prevArgs.repeats;
         if (typeof prevArgs.random_state === "number") randomState = prevArgs.random_state;
         if (typeof prevArgs.num_clusters === "number") numClusters = prevArgs.num_clusters;
-        if (typeof prevArgs.class_column === "string") classColumn = prevArgs.class_column;
       }
 
       // Load add-on availability and prune unavailable models (e.g. TabPFN
       // without its add-on) from the selection
       await loadAddons();
       trainGroup = trainGroup.filter((m) => modelAvailable(m));
-
-      // Load existing column configuration (if previously saved)
-      const savedChanges = report.column_changes?.changes as ColumnChange[] | undefined;
-      if (savedChanges && Array.isArray(savedChanges) && savedChanges.length > 0) {
-        columnChanges = savedChanges;
-        const classCol = columnChanges.find((c) => c.is_class);
-        if (classCol) classColumn = classCol.column;
-      }
     } catch (e) {
       toasts.error("Failed to load dataset");
       push("/");
@@ -276,6 +285,13 @@
     columnChanges = changes;
     classColumn = classCol;
     showColumnPreview = false;
+
+    // Keep the learning mode in sync with the configuration: a config
+    // without a target column can only train unsupervised.
+    if (!classCol && supervised) {
+      setMode(false);
+      toasts.info("No class column configured — switched to unsupervised mode");
+    }
 
     // Check if class column is categorical — needs mapping
     const classChange = changes.find((c) => c.is_class);
@@ -708,7 +724,6 @@
   {#if showColumnPreview}
     <ColumnPreviewModal
       {reportId}
-      requireClassColumn={supervised}
       onclose={() => (showColumnPreview = false)}
       oncomplete={handleColumnChangesComplete}
     />

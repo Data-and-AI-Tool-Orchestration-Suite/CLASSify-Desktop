@@ -3,14 +3,8 @@
   import { datasets as datasetsApi, type ColumnChange } from "$lib/api/client";
   import { toasts } from "$lib/stores/app";
 
-  let {
-    reportId,
-    requireClassColumn = true,
-    onclose,
-    oncomplete,
-  } = $props<{
+  let { reportId, onclose, oncomplete } = $props<{
     reportId: string;
-    requireClassColumn?: boolean;
     onclose: () => void;
     oncomplete: (changes: ColumnChange[], classColumn: string) => void;
   }>();
@@ -58,14 +52,9 @@
   }
 
   async function handleSave() {
-    const classCol = changes.find((c) => c.is_class);
-    if (requireClassColumn && !classCol) {
-      toasts.warning("Please select a class column");
-      return;
-    }
-
     saving = true;
     try {
+      const classCol = changes.find((c) => c.is_class);
       const resp = await datasetsApi.columnChanges(reportId, changes);
       if (resp.success) {
         oncomplete(changes, classCol?.column ?? "");
@@ -109,9 +98,7 @@
                 <th style="width: 80px;">Fill Value</th>
                 <th style="width: 100px;">
                   Class Col
-                  {#if !requireClassColumn}
-                    <span class="d-block fw-normal text-muted">(optional)</span>
-                  {/if}
+                  <span class="d-block fw-normal text-muted">(optional)</span>
                 </th>
               </tr>
             </thead>
@@ -171,25 +158,23 @@
               {/each}
             </tbody>
           </table>
-          {#if !requireClassColumn}
-            <div class="d-flex align-items-center gap-2 mt-2">
-              <div class="form-check mb-0">
-                <input
-                  type="radio"
-                  class="form-check-input"
-                  name="class-col"
-                  id="class-col-none"
-                  checked={!hasClassCol}
-                  onchange={clearClassColumn}
-                />
-                <label class="form-check-label" for="class-col-none">No class column</label>
-              </div>
-              <span class="small text-muted">
-                Unsupervised training doesn't need a target — mark one only to exclude it from the
-                clustering features.
-              </span>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <div class="form-check mb-0">
+              <input
+                type="radio"
+                class="form-check-input"
+                name="class-col"
+                id="class-col-none"
+                checked={!hasClassCol}
+                onchange={clearClassColumn}
+              />
+              <label class="form-check-label" for="class-col-none">No class column</label>
             </div>
-          {/if}
+            <span class="small text-muted">
+              Optional — the prediction target for supervised training, or a column to exclude from
+              clustering features in unsupervised mode.
+            </span>
+          </div>
         {/if}
       </div>
       <div class="modal-footer">
