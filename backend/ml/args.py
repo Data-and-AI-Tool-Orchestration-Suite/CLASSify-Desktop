@@ -167,9 +167,10 @@ class TrainingArgs:
             if key not in field_names:
                 continue
             if isinstance(value, str):
-                if value == "True":
+                lowered = value.lower()
+                if lowered == "true":
                     kwargs[key] = True
-                elif value == "False":
+                elif lowered == "false":
                     kwargs[key] = False
                 else:
                     try:

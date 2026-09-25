@@ -150,6 +150,121 @@ class TestJobSubmission:
         stored_args = body["args"] or {}
         assert "class_column" not in stored_args
 
+    def test_unsupervised_after_class_mapping_flow(self, tmp_data_dir: object) -> None:
+        """Regression: unsupervised training on a dataset that went through
+        the categorical class-mapping flow must succeed.
+
+        The mapping step stores a string '{class}_mapping' column; the
+        unsupervised trainer used to leak it into the clustering features,
+        crashing every model with 'could not convert string to float'.
+        """
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            # Reconfigure with a categorical class column + mapping (the
+            # standard supervised configuration flow)
+            changes = {
+                "data_types": [
+                    {
+                        "column": "feature_1",
+                        "data_type": "float",
+                        "checked": True,
+                        "missing": "",
+                        "fill_value": "",
+                        "is_class": False,
+                    },
+                    {
+                        "column": "feature_2",
+                        "data_type": "integer",
+                        "checked": True,
+                        "missing": "",
+                        "fill_value": "",
+                        "is_class": False,
+                    },
+                    {
+                        "column": "class",
+                        "data_type": "categorical",
+                        "checked": True,
+                        "missing": "",
+                        "fill_value": "",
+                        "is_class": True,
+                    },
+                ]
+            }
+            resp = client.post(f"/api/datasets/{report_id}/column-changes", json=changes)
+            assert resp.json()["success"] is True
+
+            values = client.get(
+                f"/api/datasets/{report_id}/class-values", params={"class_column": "class"}
+            ).json()["class_values"]
+            mapping = {v: str(i) for i, v in enumerate(sorted(values))}
+            resp = client.post(
+                f"/api/datasets/{report_id}/class-mapping",
+                json={"class_column": "class", "mapping": mapping},
+            )
+            assert resp.json()["success"] is True
+
+            # Now train unsupervised with the class column marked (to exclude
+            # it from the clustering features) — exactly what the frontend sends
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "False"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "False"},
+                        {"name": "visualize", "value": "False"},
+                        {"name": "random_state", "value": "42"},
+                        {"name": "num_clusters", "value": "2"},
+                        {"name": "class_column", "value": "class"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+
+            for _ in range(120):
+                status = client.get(f"/api/jobs/{job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    break
+                time.sleep(1)
+
+            assert status["state"] == "succeeded", (
+                f"Job ended in state: {status['state']}, error: {status.get('error')}"
+            )
+            results = client.get(f"/api/results/{report_id}").json()
+            assert results["success"] is True
+            assert results["report_csv"][0]["model"] == "kmeans"
+
+    def test_start_training_lowercase_boolean_options(self, tmp_data_dir: object) -> None:
+        """Regression: the frontend sends String(bool) → lowercase 'false'/'true'.
+
+        The parser only matched capitalized 'True'/'False', so 'false' fell
+        through to the numeric-parse fallback and was stored as the STRING
+        'false' — truthy! Unsupervised requests from the UI therefore ran the
+        supervised trainer (or hit the class-column 400).
+        """
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp.status_code == 200, resp.json()
+            body = resp.json()
+            assert body["state"] == "queued"
+            stored_args = body["args"] or {}
+            assert stored_args["supervised"] is False
+            assert stored_args["parameter_tune"] is False
+            assert "class_column" not in stored_args
+
     def test_start_training_nonexistent_report(self, tmp_data_dir: object) -> None:
         client, _ = _setup_and_upload(tmp_data_dir)
         with client:

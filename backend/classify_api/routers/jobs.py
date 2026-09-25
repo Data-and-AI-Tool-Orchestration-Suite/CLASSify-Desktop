@@ -6,6 +6,7 @@ import asyncio
 import json
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from runner.queue import enqueue, get_job, get_running, list_jobs, mark_stale_jo
 from storage.factory import get_storage
 
 router = APIRouter()
+log = structlog.get_logger()
 
 
 def _serialize_job(job: Any) -> JobResponse:
@@ -72,9 +74,10 @@ def start_training(
                 args[name] = [value]
         else:
             if isinstance(value, str):
-                if value == "True":
+                lowered = value.lower()
+                if lowered == "true":
                     args[name] = True
-                elif value == "False":
+                elif lowered == "false":
                     args[name] = False
                 else:
                     try:
@@ -102,6 +105,12 @@ def start_training(
     # Supervised training needs a target column; unsupervised does not.
     supervised = args.get("supervised", True)
     if supervised and not args.get("class_column"):
+        log.warning(
+            "job_start_rejected",
+            report_id=request.report_id,
+            supervised=supervised,
+            provided_option_names=[o.get("name") for o in request.options],
+        )
         raise HTTPException(
             status_code=400,
             detail="A class (target) column is required for supervised training",

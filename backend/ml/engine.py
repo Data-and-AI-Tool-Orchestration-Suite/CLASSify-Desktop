@@ -742,6 +742,13 @@ def _unsupervised_trainer(
     """Unsupervised training loop — ported from uns_trainer_func."""
     train_dataset = full_dataset
 
+    # Drop the class mapping column if present — a categorical class column
+    # that went through the class-mapping flow leaves a string
+    # "{class}_mapping" column behind, which is not a valid clustering
+    # feature (mirrors the supervised trainer's mapping extraction).
+    if args.class_column and f"{args.class_column}_mapping" in train_dataset.columns:
+        train_dataset = train_dataset.drop([f"{args.class_column}_mapping"], axis=1)
+
     if train_dataset.isna().any().any():
         _log("Dropping rows with missing values.", output_f, log_cb)
         train_dataset = train_dataset.dropna()

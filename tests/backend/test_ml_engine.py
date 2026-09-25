@@ -276,6 +276,43 @@ class TestEngineGoldenDataset:
         report_df = ml_storage.read_csv(f"{report_id}/results")
         assert report_df.iloc[0]["model"] == "kmeans"
 
+    def test_unsupervised_drops_class_mapping_column(
+        self, golden_df: pd.DataFrame, ml_storage: LocalStorage
+    ) -> None:
+        """The string '{class}_mapping' column must not become a cluster feature.
+
+        Regression: a categorical class column that went through the
+        class-mapping flow leaves a string '{class}_mapping' column in the
+        stored dataset; the unsupervised trainer only removed the class
+        column itself, so every clustering model crashed with
+        'could not convert string to float' and the job failed with
+        'No models were trained'.
+        """
+        report_id = "test-cluster-mapping-leak"
+        cluster_df = golden_df.copy()
+        # Simulate the class-mapping flow: class values stay as strings and a
+        # string mapping column is added alongside the integer class column
+        cluster_df["class"] = cluster_df["class"].map({0: "negative", 1: "positive"})
+        cluster_df["class_mapping"] = cluster_df["class"]
+        ml_storage.write_csv(f"{report_id}/file", cluster_df, index=False)
+
+        args = TrainingArgs(
+            supervised=False,
+            train_group=["kmeans"],
+            parameter_tune=False,
+            visualize=False,
+            class_column="class",
+            report_uuid=report_id,
+            n_jobs=1,
+        )
+
+        trainer(args=args, storage=ml_storage, full_dataset=cluster_df.copy(), testset=None)
+
+        log_text = ml_storage.get_text(f"{report_id}/output_log")
+        assert "class_mapping" not in log_text.split("Current column_list:")[1].splitlines()[0]
+        report_df = ml_storage.read_csv(f"{report_id}/results")
+        assert report_df.iloc[0]["model"] == "kmeans"
+
     def test_unsupervised_all_models_skipped_raises(
         self, golden_df: pd.DataFrame, ml_storage: LocalStorage
     ) -> None:
@@ -336,3 +373,19 @@ class TestEngineGoldenDataset:
         assert len(progress_messages) == 2, f"Expected 2 progress messages, got {progress_messages}"
         assert "1/2" in progress_messages[0]
         assert "2/2" in progress_messages[1]
+
+
+def test_from_dict_parses_lowercase_booleans() -> None:
+    """The UI stores String(bool) values ('false'/'true') in job args."""
+    args = TrainingArgs.from_dict(
+        {
+            "supervised": "false",
+            "parameter_tune": "true",
+            "visualize": "false",
+            "train_group": ["kmeans"],
+        }
+    )
+    assert args.supervised is False
+    assert args.parameter_tune is True
+    assert args.visualize is False
+    assert args.train_group == ["kmeans"]
