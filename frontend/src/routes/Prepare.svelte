@@ -105,6 +105,8 @@
 
   const selectedCols = $derived(columnChanges.filter((c) => c.checked));
 
+  const featureCount = $derived(selectedCols.filter((c) => !c.is_class).length);
+
   const featureSummary = $derived.by(() => {
     const counts = { numeric: 0, categorical: 0, bool: 0 };
     for (const c of selectedCols) {
@@ -305,6 +307,10 @@
       toasts.warning("Select at least one model to train");
       return;
     }
+    if (supervised && !classColumn) {
+      toasts.warning("Select a class (target) column for supervised training");
+      return;
+    }
 
     training = true;
     try {
@@ -321,8 +327,14 @@
         { name: "folds", value: String(folds) },
         { name: "repeats", value: String(repeats) },
         { name: "random_state", value: String(randomState) },
-        { name: "class_column", value: classColumn || "class" },
       ];
+
+      // The class column is only meaningful for supervised training, but in
+      // unsupervised mode a marked column is still used to exclude that
+      // column from the clustering features.
+      if (classColumn) {
+        options.push({ name: "class_column", value: classColumn });
+      }
 
       if (!supervised) {
         options.push({ name: "num_clusters", value: String(numClusters) });
@@ -381,7 +393,7 @@
           <div class="col-md-7">
             <div class="small text-muted mb-1">Feature columns</div>
             <p class="mb-2">
-              <strong>{selectedCols.length - 1}</strong> features selected
+              <strong>{featureCount}</strong> features selected
               {#if featureSummary}
                 <span class="text-muted">({featureSummary})</span>
               {/if}
@@ -401,28 +413,37 @@
             </details>
           </div>
           <div class="col-md-5 border-md-start ps-md-4">
-            <label class="small text-muted mb-1" for="target-select">Prediction target</label>
-            <select
-              id="target-select"
-              class="form-select"
-              value={classColumn}
-              onchange={handleTargetChange}
-              disabled={savingTarget}
-            >
-              {#each selectedCols as col (col.column)}
-                <option value={col.column} selected={col.column === classColumn}>
-                  {col.column} ({col.data_type})
-                </option>
-              {/each}
-            </select>
-            <div class="form-text mb-0">
-              The column the models will predict. Change it here or via Configure Columns.
-            </div>
+            {#if supervised}
+              <label class="small text-muted mb-1" for="target-select">Prediction target</label>
+              <select
+                id="target-select"
+                class="form-select"
+                value={classColumn}
+                onchange={handleTargetChange}
+                disabled={savingTarget}
+              >
+                {#each selectedCols as col (col.column)}
+                  <option value={col.column} selected={col.column === classColumn}>
+                    {col.column} ({col.data_type})
+                  </option>
+                {/each}
+              </select>
+              <div class="form-text mb-0">
+                The column the models will predict. Change it here or via Configure Columns.
+              </div>
+            {:else}
+              <span class="small text-muted mb-1 d-block">Prediction target</span>
+              <p class="mb-0 text-muted">
+                None — unsupervised mode finds clusters instead of predicting a target column.
+              </p>
+            {/if}
           </div>
         </div>
       {:else}
         <p class="text-muted mb-0">
-          Choose which columns to include and which one is the prediction target. Click "Configure
+          Choose which columns to include
+          {#if supervised}and which one is the prediction target{:else}
+            — no prediction target is needed for unsupervised training{/if}. Click "Configure
           Columns" to begin.
         </p>
       {/if}
@@ -517,36 +538,40 @@
     </div>
     <div class="card-body">
       <div class="row g-3">
-        {#if supervised}
-          <div class="col-md-6">
-            <div class="form-check form-switch">
-              <input
-                type="checkbox"
-                class="form-check-input"
-                role="switch"
-                id="parameter-tune"
-                bind:checked={parameterTune}
-              />
-              <label class="form-check-label" for="parameter-tune">
-                Parameter tuning
-                <span class="d-block small text-muted">Optuna hyperparameter search — slower</span>
-              </label>
-            </div>
+        <div class="col-md-6">
+          <div class="form-check form-switch">
+            <input
+              type="checkbox"
+              class="form-check-input"
+              role="switch"
+              id="parameter-tune"
+              bind:checked={parameterTune}
+            />
+            <label class="form-check-label" for="parameter-tune">
+              Parameter tuning
+              <span class="d-block small text-muted">
+                {supervised
+                  ? "Optuna hyperparameter search — slower"
+                  : "Optuna hyperparameter search — slower; off = use cluster count below"}
+              </span>
+            </label>
           </div>
-          {#if parameterTune}
-            <div class="col-md-6 d-flex align-items-center">
-              <label class="form-label mb-0 me-2" for="n-iter">Tuning iterations</label>
-              <input
-                type="number"
-                class="form-control"
-                id="n-iter"
-                style="max-width: 120px;"
-                min="1"
-                max="1000"
-                bind:value={nIter}
-              />
-            </div>
-          {/if}
+        </div>
+        {#if parameterTune}
+          <div class="col-md-6 d-flex align-items-center">
+            <label class="form-label mb-0 me-2" for="n-iter">Tuning iterations</label>
+            <input
+              type="number"
+              class="form-control"
+              id="n-iter"
+              style="max-width: 120px;"
+              min="1"
+              max="1000"
+              bind:value={nIter}
+            />
+          </div>
+        {/if}
+        {#if supervised}
           <div class="col-md-6">
             <div class="form-check form-switch">
               <input
@@ -683,6 +708,7 @@
   {#if showColumnPreview}
     <ColumnPreviewModal
       {reportId}
+      requireClassColumn={supervised}
       onclose={() => (showColumnPreview = false)}
       oncomplete={handleColumnChangesComplete}
     />

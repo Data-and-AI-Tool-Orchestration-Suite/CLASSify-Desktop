@@ -109,6 +109,47 @@ class TestJobSubmission:
         assert body["state"] == "queued"
         assert body["report_uuid"] == report_id
 
+    def test_start_training_supervised_requires_class_column(self, tmp_data_dir: object) -> None:
+        """Supervised training without a class column is rejected with 400."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "True"},
+                        {"name": "train_group", "value": "randomforest"},
+                        {"name": "parameter_tune", "value": "False"},
+                        {"name": "visualize", "value": "False"},
+                    ],
+                },
+            )
+        assert resp.status_code == 400
+        assert "class" in resp.json()["detail"].lower()
+
+    def test_start_training_unsupervised_without_class_column(self, tmp_data_dir: object) -> None:
+        """Unsupervised training is accepted without any class column."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "False"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "False"},
+                        {"name": "visualize", "value": "False"},
+                    ],
+                },
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["state"] == "queued"
+        stored_args = body["args"] or {}
+        assert "class_column" not in stored_args
+
     def test_start_training_nonexistent_report(self, tmp_data_dir: object) -> None:
         client, _ = _setup_and_upload(tmp_data_dir)
         with client:
@@ -125,7 +166,10 @@ class TestJobSubmission:
                 "/api/jobs",
                 json={
                     "report_id": report_id,
-                    "options": [{"name": "supervised", "value": "True"}],
+                    "options": [
+                        {"name": "supervised", "value": "True"},
+                        {"name": "class_column", "value": "class"},
+                    ],
                 },
             )
             job_id = create_resp.json()["id"]
@@ -144,7 +188,10 @@ class TestJobSubmission:
         with client:
             client.post(
                 "/api/jobs",
-                json={"report_id": report_id, "options": []},
+                json={
+                    "report_id": report_id,
+                    "options": [{"name": "class_column", "value": "class"}],
+                },
             )
             resp = client.get("/api/jobs")
         assert resp.status_code == 200
@@ -221,7 +268,10 @@ class TestJobExecution:
                 "/api/jobs",
                 json={
                     "report_id": report_id,
-                    "options": [{"name": "supervised", "value": "True"}],
+                    "options": [
+                        {"name": "supervised", "value": "True"},
+                        {"name": "class_column", "value": "class"},
+                    ],
                 },
             )
             job_id = resp.json()["id"]

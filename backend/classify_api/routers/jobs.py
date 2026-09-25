@@ -99,6 +99,16 @@ def start_training(
                     flattened.append(i)
             args["train_group"] = flattened
 
+    # Supervised training needs a target column; unsupervised does not.
+    supervised = args.get("supervised", True)
+    if supervised and not args.get("class_column"):
+        raise HTTPException(
+            status_code=400,
+            detail="A class (target) column is required for supervised training",
+        )
+    if not supervised and not args.get("class_column"):
+        args.pop("class_column", None)
+
     # Set runner-populated fields
     args["report_uuid"] = request.report_id
     args["disable_model_save"] = False

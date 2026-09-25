@@ -3,8 +3,14 @@
   import { datasets as datasetsApi, type ColumnChange } from "$lib/api/client";
   import { toasts } from "$lib/stores/app";
 
-  let { reportId, onclose, oncomplete } = $props<{
+  let {
+    reportId,
+    requireClassColumn = true,
+    onclose,
+    oncomplete,
+  } = $props<{
     reportId: string;
+    requireClassColumn?: boolean;
     onclose: () => void;
     oncomplete: (changes: ColumnChange[], classColumn: string) => void;
   }>();
@@ -13,6 +19,8 @@
   let saving = $state(false);
   let changes = $state<ColumnChange[]>([]);
   let originalMissing = $state<Record<string, boolean>>({});
+
+  const hasClassCol = $derived(changes.some((c) => c.is_class));
 
   const TYPE_OPTIONS = ["float", "integer", "bool", "categorical", "string"];
   const MISSING_OPTIONS = ["", "drop", "constant", "synthetic"];
@@ -45,9 +53,13 @@
     changes = changes.map((c) => ({ ...c, is_class: c.column === colName }));
   }
 
+  function clearClassColumn() {
+    changes = changes.map((c) => ({ ...c, is_class: false }));
+  }
+
   async function handleSave() {
     const classCol = changes.find((c) => c.is_class);
-    if (!classCol) {
+    if (requireClassColumn && !classCol) {
       toasts.warning("Please select a class column");
       return;
     }
@@ -56,7 +68,7 @@
     try {
       const resp = await datasetsApi.columnChanges(reportId, changes);
       if (resp.success) {
-        oncomplete(changes, classCol.column);
+        oncomplete(changes, classCol?.column ?? "");
       } else {
         toasts.error(resp.message || "Failed to apply column changes");
       }
@@ -94,8 +106,13 @@
                 <th>Column Name</th>
                 <th style="width: 140px;">Data Type</th>
                 <th style="width: 140px;">Missing Values</th>
-                <th style="width: 120px;">Fill Value</th>
-                <th style="width: 80px;">Class Col</th>
+                <th style="width: 80px;">Fill Value</th>
+                <th style="width: 100px;">
+                  Class Col
+                  {#if !requireClassColumn}
+                    <span class="d-block fw-normal text-muted">(optional)</span>
+                  {/if}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -154,6 +171,25 @@
               {/each}
             </tbody>
           </table>
+          {#if !requireClassColumn}
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <div class="form-check mb-0">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  name="class-col"
+                  id="class-col-none"
+                  checked={!hasClassCol}
+                  onchange={clearClassColumn}
+                />
+                <label class="form-check-label" for="class-col-none">No class column</label>
+              </div>
+              <span class="small text-muted">
+                Unsupervised training doesn't need a target — mark one only to exclude it from the
+                clustering features.
+              </span>
+            </div>
+          {/if}
         {/if}
       </div>
       <div class="modal-footer">
