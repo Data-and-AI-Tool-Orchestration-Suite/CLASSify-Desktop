@@ -4,7 +4,7 @@
 ; Requires the PyInstaller bundle in ..\..\..\dist\CLASSify\
 
 #define MyAppName "CLASSify Desktop"
-#define MyAppVersion "1.2.2"
+#define MyAppVersion "1.2.3"
 #define MyAppPublisher "UK Center for Applied AI"
 #define MyAppExeName "CLASSify.exe"
 #define MyAppSource "..\..\..\..\dist\CLASSify"
