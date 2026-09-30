@@ -7,6 +7,8 @@ hyperparameters and evaluates them using cross-validation.
 
 from __future__ import annotations
 
+import contextlib
+import time
 from functools import partial
 from typing import Any, Literal
 
@@ -14,8 +16,21 @@ import numpy as np
 import optuna
 from sklearn.model_selection import cross_val_score
 
+# Models whose estimators parallelize internally (joblib/OMP) — adding
+# cross-validation parallelism on top would oversubscribe the CPU. For the
+# rest, running folds in parallel is a large, results-identical speedup.
+_INTERNAL_PARALLEL_MODELS = {"randomforest", "bagging", "kneighbors", "xgboost"}
 
-def objective(trial: optuna.Trial, emethod: str, args: Any, X: Any, y: Any, output_f: Any) -> float:
+
+def objective(
+    trial: optuna.Trial,
+    emethod: str,
+    args: Any,
+    X: Any,
+    y: Any,
+    output_f: Any,
+    log_cb: Any = None,
+) -> float:
     """Optuna objective function for hyperparameter tuning.
 
     Samples hyperparameters based on the model type and args ranges,
@@ -280,13 +295,25 @@ def objective(trial: optuna.Trial, emethod: str, args: Any, X: Any, y: Any, outp
     scoring = scoring_map.get(goal, "f1_macro")
 
     try:
+        # Sequential-fold estimators get parallel folds — a large speedup
+        # with identical results. (n_jobs is a scheduling knob, not math.)
+        cv_n_jobs = 1 if emethod in _INTERNAL_PARALLEL_MODELS else args.n_jobs
         scores = cross_val_score(
-            estimator, X, y, cv=min(args.folds, 5), scoring=scoring, error_score="raise"
+            estimator,
+            X,
+            y,
+            cv=min(args.folds, 5),
+            scoring=scoring,
+            error_score="raise",
+            n_jobs=cv_n_jobs,
         )
         return float(np.mean(scores))
     except Exception as e:
         if hasattr(output_f, "write"):
             output_f.write(f"Tuning trial failed: {e}\n")
+        if log_cb is not None:
+            with contextlib.suppress(Exception):
+                log_cb(f"Tuning trial failed for {emethod}: {e}")
         return 0.0
 
 
@@ -310,6 +337,7 @@ def run_tuning(
     X: Any,
     y: Any,
     output_f: Any,
+    log_cb: Any = None,
 ) -> tuple[dict[str, Any], float]:
     """Run Optuna tuning and return (best_params, best_score)."""
     direction: Literal["minimize", "maximize"] = "maximize"
@@ -320,12 +348,57 @@ def run_tuning(
     ):
         direction = "minimize"
 
+    def _log(message: str) -> None:
+        with contextlib.suppress(Exception):
+            if hasattr(output_f, "write"):
+                output_f.write(message + "\n")
+        if log_cb is not None:
+            with contextlib.suppress(Exception):
+                log_cb(message)
+
     study = optuna.create_study(
         direction=direction, sampler=optuna.samplers.TPESampler(seed=args.random_state)
     )
     objective_with_params = partial(
-        objective, emethod=emethod, args=args, X=X, y=y, output_f=output_f
+        objective, emethod=emethod, args=args, X=X, y=y, output_f=output_f, log_cb=log_cb
     )
-    study.optimize(objective_with_params, n_trials=args.n_iter, catch=(Exception,))
+
+    # Optuna swallows trial exceptions when catch is set; record them so an
+    # all-trials-failed study can be reported with the real cause instead of
+    # Optuna's cryptic "No trials are completed yet."
+    trial_errors: list[str] = []
+    started = time.monotonic()
+
+    def tracked_objective(trial: optuna.Trial) -> float:
+        trial_start = time.monotonic()
+        try:
+            value = objective_with_params(trial)
+            _log(
+                f"Tuning {emethod}: trial {trial.number + 1}/{args.n_iter} complete "
+                f"— score {value:.3f} ({time.monotonic() - trial_start:.1f}s)"
+            )
+            return value
+        except Exception as e:
+            message = f"{type(e).__name__}: {e}"
+            trial_errors.append(message)
+            _log(f"Tuning trial failed: {message}")
+            raise
+
+    def _progress_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        elapsed_min = (time.monotonic() - started) / 60
+        _log(
+            f"Tuning {emethod}: {trial.number + 1}/{args.n_iter} trials ({elapsed_min:.1f} min elapsed)"
+        )
+
+    study.optimize(
+        tracked_objective, n_trials=args.n_iter, catch=(Exception,), callbacks=[_progress_callback]
+    )
+    completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if not completed:
+        last_error = trial_errors[-1] if trial_errors else "unknown error"
+        raise ValueError(
+            f"Parameter tuning failed for {emethod} — all {args.n_iter} trials failed. "
+            f"Last error: {last_error}"
+        )
     best_params = _convert_best_params(emethod, dict(study.best_trial.params))
     return best_params, float(study.best_value)

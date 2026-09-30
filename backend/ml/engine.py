@@ -145,13 +145,22 @@ def estimator_evaluation(
             )
 
         # Parameter tuning
+        params: dict[str, Any] = {}
+        best_score = 0.0
         if args.parameter_tune and emethod not in CLUSTERING_MODELS:
-            _log(f"Tuning enabled: Running for {emethod}", output_f, log_cb)
-            params, best_score = run_tuning(emethod, args, X_scaled, y, output_f)
-            _log(f"Best params: {params}, score: {best_score}", output_f, log_cb)
-        else:
-            params = {}
-            best_score = 0.0
+            if emethod == "tabpfn":
+                # TabPFN is a foundation model with fixed defaults; the tuning
+                # objective has no TabPFN branch, so a tuning run would fail
+                # every trial ("Unknown model: tabpfn").
+                _log(
+                    "Parameter tuning is not supported for TabPFN — training with defaults",
+                    output_f,
+                    log_cb,
+                )
+            else:
+                _log(f"Tuning enabled: Running for {emethod}", output_f, log_cb)
+                params, best_score = run_tuning(emethod, args, X_scaled, y, output_f, log_cb)
+                _log(f"Best params: {params}, score: {best_score}", output_f, log_cb)
 
         # Train final model
         if emethod not in CLUSTERING_MODELS:
@@ -552,33 +561,35 @@ def trainer(
             cancel_token is not None and hasattr(cancel_token, "is_set") and cancel_token.is_set()
         )
 
-    if args.supervised:
-        _supervised_trainer(
-            args,
-            storage,
-            full_dataset,
-            testset,
-            output_buf,
-            filename,
-            on_progress,
-            log_cb,
-            _check_cancel,
-        )
-    else:
-        _unsupervised_trainer(
-            args,
-            storage,
-            full_dataset,
-            testset,
-            output_buf,
-            filename,
-            on_progress,
-            log_cb,
-            _check_cancel,
-        )
-
-    # Save output log
-    storage.put_text(f"{filename}/output_log", output_buf.getvalue())
+    try:
+        if args.supervised:
+            _supervised_trainer(
+                args,
+                storage,
+                full_dataset,
+                testset,
+                output_buf,
+                filename,
+                on_progress,
+                log_cb,
+                _check_cancel,
+            )
+        else:
+            _unsupervised_trainer(
+                args,
+                storage,
+                full_dataset,
+                testset,
+                output_buf,
+                filename,
+                on_progress,
+                log_cb,
+                _check_cancel,
+            )
+    finally:
+        # Persist the output log even when training raises — failed jobs are
+        # diagnosed from this log ("No models were trained" etc.).
+        storage.put_text(f"{filename}/output_log", output_buf.getvalue())
 
 
 def _supervised_trainer(
@@ -690,9 +701,6 @@ def _supervised_trainer(
                 )
                 overall_positive_rates.update(positive_rates)
 
-                if on_progress:
-                    on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
-
                 if results and len(results) > 1:
                     model_stats = {
                         "model": model,
@@ -707,6 +715,11 @@ def _supervised_trainer(
             except Exception as e:
                 _log(f"Error in train/evaluation of {model}: {e}", output_f, log_cb)
                 traceback.print_exc()
+
+        # Advance the progress bar for success, failure, and skip alike so it
+        # reflects the number of models handled, not just successful ones.
+        if on_progress:
+            on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
 
     # Write report
     report_rows = 0
@@ -784,9 +797,6 @@ def _unsupervised_trainer(
                 log_cb=log_cb,
             )
 
-            if on_progress:
-                on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
-
             if results and len(results) > 1:
                 model_stats = {
                     "model": model,
@@ -800,6 +810,10 @@ def _unsupervised_trainer(
         except Exception as e:
             _log(f"Error in train/evaluation of {model}: {e}", output_f, log_cb)
             traceback.print_exc()
+
+        # Advance the progress bar for success and failure alike.
+        if on_progress:
+            on_progress(i + 1, total_models, f"{i + 1}/{total_models} Processed")
 
     report_rows = 0
     if model_results:

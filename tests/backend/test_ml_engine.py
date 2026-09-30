@@ -374,6 +374,42 @@ class TestEngineGoldenDataset:
         assert "1/2" in progress_messages[0]
         assert "2/2" in progress_messages[1]
 
+    def test_tabpfn_with_tuning_skips_tuning_and_missing_addon(
+        self, golden_df: pd.DataFrame, ml_storage: LocalStorage
+    ) -> None:
+        """TabPFN + parameter_tune=True must not enter the (unimplemented)
+        tabpfn tuning path, and a missing addon is skipped cleanly."""
+        report_id = "test-tabpfn-tuning"
+        ml_storage.write_csv(f"{report_id}/file", golden_df, index=False)
+
+        progress: list[tuple[int, int, str]] = []
+
+        args = TrainingArgs(
+            supervised=True,
+            train_group=["tabpfn"],
+            parameter_tune=True,
+            visualize=False,
+            random_state=42,
+            class_column="class",
+            report_uuid=report_id,
+            n_jobs=1,
+        )
+
+        with pytest.raises(ValueError, match="No models were trained"):
+            trainer(
+                args=args,
+                storage=ml_storage,
+                full_dataset=golden_df.copy(),
+                testset=None,
+                on_progress=lambda c, t, m: progress.append((c, t, m)),
+            )
+
+        log_text = ml_storage.get_text(f"{report_id}/output_log")
+        assert "Tuning enabled: Running for tabpfn" not in log_text
+        assert "Skipping TabPFN — addon not installed" in log_text
+        # The progress bar advanced even though the model was skipped
+        assert progress == [(1, 1, "1/1 Processed")]
+
 
 def test_from_dict_parses_lowercase_booleans() -> None:
     """The UI stores String(bool) values ('false'/'true') in job args."""
@@ -389,3 +425,35 @@ def test_from_dict_parses_lowercase_booleans() -> None:
     assert args.parameter_tune is True
     assert args.visualize is False
     assert args.train_group == ["kmeans"]
+
+
+def test_run_tuning_all_trials_failed_raises_with_real_error() -> None:
+    """When every tuning trial fails, the error names the actual cause.
+
+    Regression: Optuna's 'No trials are completed yet.' was raised instead —
+    e.g. for tabpfn, whose objective branch did not exist, every trial died
+    with 'Unknown model: tabpfn' and the user never saw why.
+    """
+    import io
+
+    from ml.tuning import run_tuning
+
+    args = TrainingArgs(
+        supervised=True,
+        train_group=["tabpfn"],
+        parameter_tune=True,
+        n_iter=3,
+        random_state=42,
+        report_uuid="tuning-guard",
+        n_jobs=1,
+        disable_model_save=False,
+    )
+    output = io.StringIO()
+    X = pd.DataFrame({"f1": [1.0, 2.0, 3.0, 4.0], "f2": [2.0, 1.0, 4.0, 3.0]})
+    y = pd.Series([0, 1, 0, 1])
+
+    with pytest.raises(ValueError, match="all 3 trials failed"):
+        run_tuning("tabpfn", args, X, y, output)
+
+    assert "Unknown model: tabpfn" in output.getvalue()
+    assert "Tuning trial failed" in output.getvalue()
