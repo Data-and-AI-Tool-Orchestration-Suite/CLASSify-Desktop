@@ -3,7 +3,7 @@ message: "If you use CLASSify in your research, please cite the publication belo
 title: "CLASSify Desktop — Local-first ML classification training app"
 version: "1.0.0"
 date-released: "2026-08-16"
-license: GPL-3.0-or-later
+license: Apache-2.0
 repository-code: "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop"
 keywords:
   - machine-learning

@@ -106,4 +106,4 @@ This project was supported by:
 
 ## License
 
-GPL-3.0-or-later (inherited from CLASSify-2).
+Apache License 2.0. See [LICENSE](LICENSE) for the full text.
