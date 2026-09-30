@@ -17,7 +17,7 @@ from classify_api.schemas.jobs import JobListResponse, JobResponse, TrainRequest
 from classify_api.settings import Settings, get_settings
 from ml.options import get_options
 from runner.cancellation import set_cancel_flag
-from runner.queue import enqueue, get_job, get_running, list_jobs, mark_stale_jobs_failed, set_state
+from runner.queue import enqueue, get_job, list_jobs, mark_stale_jobs_failed, set_state
 from storage.factory import get_storage
 
 router = APIRouter()
@@ -40,6 +40,11 @@ def _serialize_job(job: Any) -> JobResponse:
     )
 
 
+# Training is CPU-bound and jobs run one at a time; cap how many may pile
+# up in the queue so runs can't queue indefinitely behind each other.
+MAX_QUEUED_JOBS = 10
+
+
 @router.post("", response_model=JobResponse)
 def start_training(
     request: TrainRequest,
@@ -54,12 +59,23 @@ def start_training(
     if report.status == "Processing":
         raise HTTPException(status_code=409, detail="A job is already running for this dataset")
 
-    # Check if another job is already running (one at a time)
-    running = get_running(db)
-    if running:
+    # One active (queued or running) job per dataset
+    active = repo.get_active_job_for_report(db, request.report_id)
+    if active is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"Another job is already running (job {running.id}). Wait for it to finish.",
+            detail="A job is already queued or running for this dataset "
+            f"(job {active.id[:8]}). Wait for it to finish.",
+        )
+
+    # Training runs sequentially on purpose (CPU-bound, limited compute on
+    # smaller machines) — new jobs wait in the FIFO queue for the current one.
+    queued = repo.count_queued_jobs(db)
+    if queued >= MAX_QUEUED_JOBS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"The job queue is full ({queued} jobs waiting, limit {MAX_QUEUED_JOBS}). "
+            "Wait for one to finish before starting another.",
         )
 
     # Parse options into args dict
@@ -126,13 +142,28 @@ def start_training(
     args["min_samples_split"] = [2, 5, 10]
     args["min_samples_leaf"] = [1, 2, 4]
     args["bootstrap"] = [True, False]
+    # Snapshot for restoring the status if the queued job is cancelled
+    args["prev_report_status"] = report.status
 
     # Enqueue
     job = enqueue(db, request.report_id, args)
     repo.update_report_job_id(db, request.report_id, job.id)
+    # Surface the pending job in the dataset list; the manager flips this to
+    # "Processing" when the job actually starts running.
+    repo.update_report_status(db, request.report_id, "Queued")
     db.commit()
 
     return _serialize_job(job)
+
+
+@router.get("/active/{report_id}", response_model=JobResponse | None)
+def get_active_job_for_report(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> JobResponse | None:
+    """Get the queued or running job for a dataset, if any."""
+    job = repo.get_active_job_for_report(db, report_id)
+    return _serialize_job(job) if job else None
 
 
 @router.get("", response_model=JobListResponse)
@@ -165,8 +196,11 @@ def cancel_job(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     if job.state == "queued":
-        # Just remove from queue
+        # Just remove from queue; restore the report's pre-queue status
         set_state(db, job_id, "failed", error="Cancelled by user")
+        prev_status = (job.args or {}).get("prev_report_status")
+        repo.update_report_status(db, job.report_uuid, prev_status or "Failed")
+        db.commit()
         return {"status": "cancelled", "message": "Queued job cancelled"}
 
     if job.state in ("running", "cancelling"):
@@ -241,6 +275,7 @@ async def job_events(
                         "id": current_job.id,
                         "report_uuid": current_job.report_uuid,
                         "state": state,
+                        "args": current_job.args,
                         "progress": progress.completed if progress else current_job.progress,
                         "progress_total": progress.total
                         if progress

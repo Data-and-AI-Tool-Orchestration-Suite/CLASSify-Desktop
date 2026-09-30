@@ -25,7 +25,11 @@
       map.set(name, { name, state: "pending", score: null, note: "" });
     }
 
-    const ensure = (name: string): ModelInfo => {
+    // Log lines append punctuation to model names ("... of tabpfn:") —
+    // normalize so every line for a model updates the same entry instead of
+    // creating a duplicate row.
+    const ensure = (rawName: string): ModelInfo => {
+      const name = rawName.replace(/[:,;.]+$/, "");
       let info = map.get(name);
       if (!info) {
         info = { name, state: "pending", score: null, note: "" };
@@ -71,11 +75,17 @@
     return [...map.values()];
   });
 
+  const queued = $derived(job?.state === "queued");
+
   const pct = $derived(
     job && job.progress_total > 0 ? Math.round((job.progress / job.progress_total) * 100) : 0,
   );
 
-  const doneCount = $derived(models.filter((m) => m.state === "done").length);
+  // Models that finished — successfully or not — count as processed.
+  const processedCount = $derived(
+    models.filter((m) => m.state === "done" || m.state === "failed" || m.state === "skipped")
+      .length,
+  );
 
   const currentState = $derived(models.find((m) => m.state === "running") ?? null);
 
@@ -94,35 +104,49 @@
 <div class="card mb-3 border-warning">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span>
-      <span class="badge bg-warning text-dark">Training</span>
-      {#if currentState}
-        <span class="ms-2">
-          Training <strong>{currentState.name}</strong>
-          {#if log.includes("Tuning enabled")}
-            <span class="text-muted small">(parameter tuning)</span>
-          {/if}
+      {#if queued}
+        <span class="badge bg-secondary">Queued</span>
+        <span class="ms-2 text-muted">
+          Waiting for the current job to finish — this one will start automatically.
         </span>
-      {:else if job}
-        <span class="ms-2 text-muted">{job.progress_message ?? "Starting..."}</span>
+      {:else}
+        <span class="badge bg-warning text-dark">Training</span>
+        {#if currentState}
+          <span class="ms-2">
+            Training <strong>{currentState.name}</strong>
+            {#if log.includes("Tuning enabled")}
+              <span class="text-muted small">(parameter tuning)</span>
+            {/if}
+          </span>
+        {:else if job}
+          <span class="ms-2 text-muted">{job.progress_message ?? "Starting..."}</span>
+        {/if}
       {/if}
     </span>
     <button class="btn btn-outline-danger btn-sm" onclick={oncancel}> Cancel </button>
   </div>
   <div class="card-body">
-    <div class="progress mb-1" style="height: 20px;">
-      <div
-        class="progress-bar progress-bar-striped progress-bar-animated"
-        role="progressbar"
-        style="width: {pct}%"
-        aria-valuenow={pct}
-        aria-valuemin="0"
-        aria-valuemax="100"
-      >
-        {pct}%
+    {#if queued}
+      <div class="text-muted small mb-3">
+        <span class="spinner-border spinner-border-sm me-2"></span>
+        The trainer runs one job at a time so training gets all available compute.
       </div>
-    </div>
+    {:else}
+      <div class="progress mb-1" style="height: 20px;">
+        <div
+          class="progress-bar progress-bar-striped progress-bar-animated"
+          role="progressbar"
+          style="width: {pct}%"
+          aria-valuenow={pct}
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          {pct}%
+        </div>
+      </div>
+    {/if}
     <p class="text-muted small mb-3">
-      {doneCount} of {models.length || (job?.progress_total ?? 0)} models processed
+      {processedCount} of {models.length || (job?.progress_total ?? 0)} models processed
     </p>
 
     {#if models.length > 0}

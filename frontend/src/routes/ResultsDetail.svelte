@@ -4,11 +4,19 @@
   import {
     results as resultsApi,
     datasets as datasetsApi,
+    jobs as jobsApi,
     system,
     type DatasetRow,
     type RunInfo,
   } from "$lib/api/client";
-  import { toasts, currentJob, jobPolling, liveLog, cancelJob } from "$lib/stores/app";
+  import {
+    toasts,
+    currentJob,
+    jobPolling,
+    liveLog,
+    cancelJob,
+    startJobMonitoring,
+  } from "$lib/stores/app";
   import TrainingProgress from "$lib/components/TrainingProgress.svelte";
 
   let { params } = $props<{ params: { reportId?: string } }>();
@@ -48,6 +56,18 @@
       if (report.status === "Processing" && !jobActive) {
         await new Promise((r) => setTimeout(r, 1500));
         report = await datasetsApi.get(reportId);
+      }
+
+      // Monitor this report's own active (queued or running) job so the live
+      // progress card shows here even when another job was started later —
+      // the global monitor follows whichever page is open.
+      try {
+        const activeJob = await jobsApi.active(reportId);
+        if (activeJob && (!$jobPolling || $currentJob?.id !== activeJob.id)) {
+          startJobMonitoring(activeJob.id, activeJob);
+        }
+      } catch {
+        // No active job for this report
       }
 
       // Load run history
@@ -284,7 +304,7 @@
       <span
         class="badge bg-{report.status === 'Processed'
           ? 'success'
-          : report.status === 'Processing'
+          : report.status === 'Processing' || report.status === 'Queued'
             ? 'warning'
             : 'danger'}"
       >
@@ -335,6 +355,11 @@
       log={$liveLog}
       oncancel={() => cancelJob($currentJob!.id)}
     />
+  {:else if report.status === "Queued"}
+    <div class="alert alert-info mb-3">
+      <span class="spinner-border spinner-border-sm me-2"></span>
+      Waiting in the training queue — this job will start automatically when the current one finishes.
+    </div>
   {:else if report.status === "Processing"}
     <div class="alert alert-warning mb-3">
       <div class="spinner-border spinner-border-sm me-2"></div>

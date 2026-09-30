@@ -78,6 +78,7 @@
     const map: Record<string, string> = {
       Preview: "bg-secondary",
       Uploaded: "bg-info",
+      Queued: "bg-warning",
       Processing: "bg-warning",
       Processed: "bg-success",
       Failed: "bg-danger",
@@ -189,7 +190,7 @@
             </td>
             <td>
               <span class="badge {statusBadge(report.status)}">
-                {#if report.status === "Processing"}
+                {#if report.status === "Processing" || report.status === "Queued"}
                   <span class="spinner-border spinner-border-sm me-1"></span>
                 {/if}
                 {report.status}

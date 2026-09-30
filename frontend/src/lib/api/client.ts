@@ -16,10 +16,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => resp.statusText);
-    throw new Error(`API ${resp.status}: ${text}`);
+    throw new Error(await errorMessage(resp));
   }
   return resp.json() as Promise<T>;
+}
+
+async function errorMessage(resp: Response): Promise<string> {
+  try {
+    const body = (await resp.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") {
+      return `API ${resp.status}: ${body.detail}`;
+    }
+  } catch {
+    // Not JSON — fall back to the status text
+  }
+  const text = await resp.text().catch(() => resp.statusText);
+  return `API ${resp.status}: ${text || resp.statusText}`;
 }
 
 async function upload<T>(
@@ -39,8 +51,7 @@ async function upload<T>(
     body: form,
   });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => resp.statusText);
-    throw new Error(`API ${resp.status}: ${text}`);
+    throw new Error(await errorMessage(resp));
   }
   return resp.json() as Promise<T>;
 }
@@ -224,6 +235,7 @@ export const jobs = {
     }),
   list: () => request<{ jobs: JobResponse[] }>("/jobs"),
   get: (jobId: string) => request<JobResponse>(`/jobs/${jobId}`),
+  active: (reportId: string) => request<JobResponse | null>(`/jobs/active/${reportId}`),
   cancel: (jobId: string) =>
     request<{ status: string; message: string }>(`/jobs/${jobId}/cancel`, { method: "POST" }),
   recover: () => request<{ recovered: number }>("/jobs/recover", { method: "POST" }),

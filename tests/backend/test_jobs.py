@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import time
 
 from fastapi.testclient import TestClient
@@ -204,7 +205,7 @@ class TestJobSubmission:
             assert resp.json()["success"] is True
 
             # Now train unsupervised with the class column marked (to exclude
-            # it from the clustering features) — exactly what the frontend sends
+            # it from the clustering features) â€” exactly what the frontend sends
             resp = client.post(
                 "/api/jobs",
                 json={
@@ -236,11 +237,11 @@ class TestJobSubmission:
             assert results["report_csv"][0]["model"] == "kmeans"
 
     def test_start_training_lowercase_boolean_options(self, tmp_data_dir: object) -> None:
-        """Regression: the frontend sends String(bool) → lowercase 'false'/'true'.
+        """Regression: the frontend sends String(bool) â†’ lowercase 'false'/'true'.
 
         The parser only matched capitalized 'True'/'False', so 'false' fell
         through to the numeric-parse fallback and was stored as the STRING
-        'false' — truthy! Unsupervised requests from the UI therefore ran the
+        'false' â€” truthy! Unsupervised requests from the UI therefore ran the
         supervised trainer (or hit the class-column 400).
         """
         client, report_id = _setup_and_upload(tmp_data_dir)
@@ -264,6 +265,149 @@ class TestJobSubmission:
             assert stored_args["supervised"] is False
             assert stored_args["parameter_tune"] is False
             assert "class_column" not in stored_args
+
+    def test_start_training_queued_behind_running_job(self, tmp_data_dir: object) -> None:
+        """A second job for a DIFFERENT dataset queues instead of 409ing.
+
+        Regression: any start while another job ran was rejected with 409,
+        forcing the user to wait manually.  Jobs now queue FIFO and run
+        sequentially.
+        """
+        client, report_id_a = _setup_and_upload(tmp_data_dir)
+        # Second, independent dataset
+        resp = client.post(
+            "/api/datasets/upload",
+            files={"file": ("second.csv", io.BytesIO(SMALL_CSV), "text/csv")},
+        )
+        assert resp.status_code == 200
+        report_id_b = resp.json()["report_id"]
+
+        with client:
+            resp_a = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id_a,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp_a.status_code == 200
+
+            resp_b = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id_b,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp_b.status_code == 200, resp_b.json()
+            # Job B may be queued (A running) or already running â€” never 409
+            assert resp_b.json()["state"] in ("queued", "running")
+
+    def test_start_training_same_dataset_twice_rejected(self, tmp_data_dir: object) -> None:
+        """A second job for the SAME dataset is still rejected with 409."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp.status_code == 200
+
+            resp2 = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp2.status_code == 409
+            detail = resp2.json()["detail"]
+            assert "queued or running for this dataset" in detail
+
+    def test_queued_job_sets_report_status_and_cancel_restores_it(
+        self, tmp_data_dir: object
+    ) -> None:
+        """Enqueueing marks the dataset 'Queued'; cancelling restores the
+        pre-queue status so the dataset list reflects the queue."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp.status_code == 200
+            job_id = resp.json()["id"]
+
+            report = client.get(f"/api/datasets/{report_id}").json()
+            assert report["status"] == "Queued"
+
+            resp = client.post(f"/api/jobs/{job_id}/cancel")
+            assert resp.status_code == 200
+
+            report = client.get(f"/api/datasets/{report_id}").json()
+            assert report["status"] == "Uploaded"
+
+    def test_sse_events_include_args(self, tmp_data_dir: object) -> None:
+        """The SSE progress stream must include job args so the frontend can
+        show the full requested model list (regression: the list only showed
+        models seen in the log so far, with totals like '3 of 6' for 10)."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "train_group", "value": "spectralclustering"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+
+            with client.stream("GET", f"/api/jobs/{job_id}/events") as stream:
+                event_payload = None
+                for line in stream.iter_lines():
+                    if line.startswith("data: "):
+                        event_payload = json.loads(line[len("data: ") :])
+                        break
+            assert event_payload is not None
+            args = event_payload.get("args") or {}
+            assert args.get("train_group") == ["kmeans", "spectralclustering"]
 
     def test_start_training_nonexistent_report(self, tmp_data_dir: object) -> None:
         client, _ = _setup_and_upload(tmp_data_dir)
@@ -336,7 +480,7 @@ class TestMLOptions:
 
 class TestJobExecution:
     def test_job_runs_to_completion(self, tmp_data_dir: object) -> None:
-        """Full end-to-end: upload → configure → submit → wait → verify results."""
+        """Full end-to-end: upload â†’ configure â†’ submit â†’ wait â†’ verify results."""
         client, report_id = _setup_and_upload(tmp_data_dir)
         with client:
             # Submit training job
