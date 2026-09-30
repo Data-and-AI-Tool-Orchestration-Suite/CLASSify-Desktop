@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from classify_api.orm.models import Action, Job, Report, Result, Setting
@@ -155,6 +155,42 @@ def get_previous_job_by_report(db: Session, report_uuid: str, exclude_job_id: st
 
 def get_next_queued_job(db: Session) -> Job | None:
     return db.scalar(select(Job).where(Job.state == "queued").order_by(Job.created_at).limit(1))
+
+
+def claim_next_queued_job(db: Session) -> Job | None:
+    """Atomically claim the next queued job (FIFO).
+
+    The state flip happens in a single UPDATE conditioned on the job still
+    being queued, so two managers (or a second app instance) can never run
+    the same job twice.  Returns the claimed job, or None if the queue is
+    empty or the claim was lost to another claimant.
+    """
+    job = get_next_queued_job(db)
+    if job is None:
+        return None
+    claimed = db.execute(
+        update(Job).where(Job.id == job.id, Job.state == "queued").values(state="running")
+    )
+    db.commit()
+    if claimed.rowcount == 0:  # type: ignore[attr-defined]
+        return None
+    db.refresh(job)
+    return job
+
+
+def get_active_job_for_report(db: Session, report_uuid: str) -> Job | None:
+    """Get a queued or running job for a report, if any."""
+    return db.scalar(
+        select(Job)
+        .where(Job.report_uuid == report_uuid, Job.state.in_(["queued", "running", "cancelling"]))
+        .order_by(desc(Job.created_at))
+        .limit(1)
+    )
+
+
+def count_queued_jobs(db: Session) -> int:
+    """Count currently queued jobs (excluding running)."""
+    return int(db.scalar(select(func.count()).select_from(Job).where(Job.state == "queued")) or 0)
 
 
 def get_running_job(db: Session) -> Job | None:

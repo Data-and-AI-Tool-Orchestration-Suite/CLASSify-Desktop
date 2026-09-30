@@ -125,14 +125,14 @@ class JobManager:
                     time.sleep(1)
                     continue
 
-                # Get next queued job
-                job = repo.get_next_queued_job(db)
+                # Atomically claim the next queued job (guards against two
+                # managers — e.g. a second app instance — running one job
+                # twice)
+                job = repo.claim_next_queued_job(db)
                 if job is None:
                     time.sleep(2)
                     continue
 
-                # Mark as running
-                repo.update_job_state(db, job.id, "running")
                 repo.update_report_status(db, job.report_uuid, "Processing")
                 db.commit()
 

@@ -161,10 +161,14 @@ def run_job(job_id: str) -> int:
             with contextlib.suppress(Exception):
                 storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
 
+        # Capture the frozen flag BEFORE the faker unfreeze below — the
+        # threading-backend decision must reflect how this process started.
+        was_frozen = getattr(sys, "frozen", False)
+
         # faker (SDV synthesis) resolves its data paths via sys.frozen
         # checks — unfreeze for the training phase so add-on packages
         # resolve from the add-on dir instead of sys._MEIPASS
-        if getattr(sys, "frozen", False):
+        if was_frozen:
             sys.__dict__["frozen"] = False
 
         # Run the trainer
@@ -173,7 +177,10 @@ def run_job(job_id: str) -> int:
         # Process-based joblib backends (loky) deadlock inside frozen apps —
         # spawn attempts relaunch the bundled exe instead of a worker. Force
         # thread-based parallelism; identical math, no worker processes.
-        if getattr(sys, "frozen", False):
+        # (The was_frozen snapshot is taken before the faker unfreeze —
+        # checking sys.frozen here again would always be False and leak a
+        # loky pool of classify-jobworker.exe processes per training run.)
+        if was_frozen:
             from joblib import parallel_backend
 
             with parallel_backend("threading"):

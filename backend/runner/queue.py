@@ -74,7 +74,7 @@ def mark_stale_jobs_failed(db: Session) -> int:
     if count:
         db.commit()
 
-    stuck_reports = db.query(Report).filter(Report.status == "Processing").all()
+    stuck_reports = db.query(Report).filter(Report.status.in_(["Processing", "Queued"])).all()
     for report in stuck_reports:
         latest = (
             db.query(Job)
@@ -82,7 +82,9 @@ def mark_stale_jobs_failed(db: Session) -> int:
             .order_by(Job.created_at.desc())
             .first()
         )
-        if latest is None or latest.state != "running":
+        # A report whose latest job is still queued is legitimately waiting;
+        # anything terminal means the status is stale.
+        if latest is None or latest.state not in ("running", "queued"):
             new_status = (
                 "Processed" if latest is not None and latest.state == "succeeded" else "Failed"
             )

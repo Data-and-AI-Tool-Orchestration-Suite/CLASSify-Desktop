@@ -37,17 +37,21 @@ def _acquire_windows_lock() -> bool:
 
     mutex_name = "CLASSifyDesktopSingleInstance"
 
-    kernel32 = ctypes.windll.kernel32
+    # use_last_error=True is required — without it, GetLastError() can return
+    # a stale code from an unrelated ctypes call and a second instance would
+    # believe it is the first (two app instances, two job managers racing on
+    # the same queued job).
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     CREATE_MUTEX = kernel32.CreateMutexW
     CREATE_MUTEX.restype = ctypes.wintypes.HANDLE
-    CREATE_MUTEX.argtypes = [ctypes.wintypes.LPCVOID, ctypes.wintypes.BOOL, ctypes.wintypes.LPCWSTR]
+    CREATE_MUTEX.argtypes = [ctypes.wintypes.HANDLE, ctypes.wintypes.BOOL, ctypes.wintypes.LPCWSTR]
 
     mutex = CREATE_MUTEX(None, False, mutex_name)
-
-    last_error = kernel32.GetLastError()
-    if last_error == 183:
-        kernel32.CloseHandle(mutex)
+    last_error = ctypes.get_last_error()
+    if mutex is None or last_error == 183:  # ERROR_ALREADY_EXISTS
+        if mutex:
+            kernel32.CloseHandle(mutex)
         return False
 
     acquire_lock._win_mutex = mutex  # noqa: SLF001
