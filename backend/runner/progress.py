@@ -59,3 +59,22 @@ def append_log(storage: Storage, report_id: str, message: str) -> None:
     except Exception:
         existing = ""
     storage.put_text(f"{report_id}/output_log", existing + message + "\n")
+
+
+# ── Per-model run states ──
+# The worker tracks model states in <report_id>/models so the UI can show the
+# authoritative checklist without re-parsing the (truncated) log tail.
+
+
+def write_models(storage: Storage, report_id: str, models: list[dict[str, Any]]) -> None:
+    """Persist the per-model state list (called by the worker)."""
+    storage.put_text(f"{report_id}/models", json.dumps(models))
+
+
+def read_models(storage: Storage, report_id: str) -> list[dict[str, Any]] | None:
+    """Read the per-model state list (called by the manager)."""
+    try:
+        data = json.loads(storage.get_text(f"{report_id}/models"))
+        return data if isinstance(data, list) else None
+    except Exception:
+        return None

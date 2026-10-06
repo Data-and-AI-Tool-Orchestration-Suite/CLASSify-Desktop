@@ -82,7 +82,20 @@ class JobManager:
                     if self._current_process is not None:
                         try:
                             if sys.platform == "win32":
-                                self._current_process.terminate()
+                                # Kill the whole tree: the worker may have
+                                # loky/joblib children that would otherwise
+                                # outlive it (burning CPU, holding pipes).
+                                subprocess.run(
+                                    [
+                                        "taskkill",
+                                        "/PID",
+                                        str(self._current_process.pid),
+                                        "/T",
+                                        "/F",
+                                    ],
+                                    capture_output=True,
+                                    check=False,
+                                )
                             else:
                                 os.killpg(os.getpgid(self._current_process.pid), signal.SIGTERM)
                         except (ProcessLookupError, OSError):
@@ -102,6 +115,13 @@ class JobManager:
                         repo.update_job_state(
                             db, self._current_job_id, "failed", error="Cancelled by user"
                         )
+                        # The worker is killed before it can update this itself
+                        if job is not None:
+                            repo.update_report_status(db, job.report_uuid, "Failed")
+                            # The kill can land before the worker created its log
+                            from runner.progress import append_log
+
+                            append_log(get_storage(), job.report_uuid, "Job cancelled by user.")
                         db.commit()
                 finally:
                     db.close()
@@ -168,23 +188,30 @@ class JobManager:
         with self._lock:
             self._current_job_id = job_id
 
+        stderr_path: Path | None = None
         try:
-            if sys.platform == "win32":
-                self._current_process = subprocess.Popen(
-                    cmd,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                )
-            else:
-                self._current_process = subprocess.Popen(
-                    cmd,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    preexec_fn=os.setsid,
-                )
+            # Capture stderr to a file instead of a pipe: a killed worker can
+            # leave children (loky/joblib) holding the pipe write-end, which
+            # blocks communicate()/wait() forever and stalls the whole queue.
+            # The worker logs its own output to storage; this file only
+            # carries crash tracebacks.
+            stderr_path = Path(settings.data_dir) / f"{report_id}/worker_stderr.log"
+            stderr_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(stderr_path, "wb") as stderr_f:
+                if sys.platform == "win32":
+                    self._current_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=stderr_f,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    )
+                else:
+                    self._current_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=stderr_f,
+                        preexec_fn=os.setsid,
+                    )
 
             log.info("job_manager.subprocess_started", job_id=job_id, pid=self._current_process.pid)
 
@@ -194,8 +221,7 @@ class JobManager:
                 log.info("job_manager.subprocess_cancelled_before_wait", job_id=job_id)
                 return
 
-            stdout, stderr = proc.communicate()
-            exit_code = proc.returncode
+            exit_code = proc.wait()
 
             log.info("job_manager.subprocess_finished", job_id=job_id, exit_code=exit_code)
 
@@ -214,11 +240,11 @@ class JobManager:
                         log.info("job_manager.subprocess_nonzero_but_succeeded", job_id=job_id)
                     else:
                         if job.state != "failed":
-                            error_msg = (
-                                stderr.decode("utf-8", errors="replace")[-500:]
-                                if stderr
-                                else "Unknown error"
-                            )
+                            error_msg = "Unknown error"
+                            if stderr_path is not None and stderr_path.exists():
+                                error_msg = stderr_path.read_bytes()[-500:].decode(
+                                    "utf-8", errors="replace"
+                                )
                             repo.update_job_state(db, job_id, "failed", error=error_msg)
                             repo.update_report_status(db, report_id, "Failed")
                     db.commit()

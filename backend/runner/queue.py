@@ -57,11 +57,17 @@ def list_jobs(db: Session) -> list[Job]:
 def mark_stale_jobs_failed(db: Session) -> int:
     """On startup, mark any running/cancelling jobs as failed (interrupted).
 
-    Also reconciles reports stuck in "Processing" whose latest job is already
-    in a terminal state (e.g. the job was failed by an earlier recovery).
+    Also reconciles reports stuck in "Processing"/"Queued" whose latest job
+    is already in a terminal state (e.g. the job was failed by an earlier
+    recovery).
 
     Returns the count of stale jobs recovered.
     """
+    from runner.cancellation import clear_cancel_flag
+    from runner.progress import append_log
+    from storage.factory import get_storage
+
+    storage = get_storage()
     count = 0
     jobs = repo.list_jobs(db)
     for job in jobs:
@@ -70,6 +76,14 @@ def mark_stale_jobs_failed(db: Session) -> int:
             report = repo.get_report(db, job.report_uuid)
             if report is not None and report.status == "Processing":
                 repo.update_report_status(db, job.report_uuid, "Failed")
+            # The killed worker never ran its cleanup — clear any cancel flag
+            # it left behind, or every future job on this dataset would
+            # instant-fail with 'Cancelled by user'.
+            clear_cancel_flag(storage, job.report_uuid)
+            # The interrupted run may not have created a log yet (killed
+            # between artifact-clear and log-init) — failed jobs always get
+            # a log explaining why.
+            append_log(storage, job.report_uuid, "Job interrupted by app restart.")
             count += 1
     if count:
         db.commit()

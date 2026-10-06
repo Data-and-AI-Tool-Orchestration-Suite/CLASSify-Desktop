@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -28,13 +29,15 @@ from classify_api.settings import get_settings  # noqa: E402
 from ml.args import TrainingArgs  # noqa: E402
 from ml.column_types import read_csv_from_storage  # noqa: E402
 from runner.cancellation import CancelToken, clear_cancel_flag  # noqa: E402
-from runner.progress import write_progress  # noqa: E402
+from runner.progress import write_models, write_progress  # noqa: E402
 from storage.factory import get_storage  # noqa: E402
 
 _RUN_ARTIFACT_SUFFIXES = [
     "results",
     "results.json",
     "output_log",
+    "models",
+    "worker_stderr.log",
     "scaler.joblib",
     "labeled",
     "logisticregression_odds_ratio",
@@ -91,6 +94,8 @@ def run_job(job_id: str) -> int:
 
     factory = get_session_factory()
     db = factory()
+    storage = None
+    report_id: str | None = None
 
     try:
         job = repo.get_job(db, job_id)
@@ -116,12 +121,19 @@ def run_job(job_id: str) -> int:
 
         init_addons()
 
-        # Archive previous run's artifacts if they exist (preserves run history),
-        # then clear them so the new run starts from a clean slate.
+        # Archive previous run's artifacts (preserves run history — including
+        # failed/cancelled runs' logs, which is the only way to inspect why
+        # they failed), then clear them so the new run starts clean.
         prev_job = repo.get_previous_job_by_report(db, report_id, job_id)
-        if prev_job and storage.exists(f"{report_id}/results"):
+        if prev_job:
             _archive_run(storage, report_id, prev_job.id)
         _clear_run_artifacts(storage, report_id)
+
+        # Start the output log immediately after the clear so ANY later
+        # failure (dataset read errors, addon init, training) is visible in
+        # the results page log tab.
+        log_lines: list[str] = [f"Job {job_id} started."]
+        storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
 
         # Read the processed dataset
         try:
@@ -145,21 +157,77 @@ def run_job(job_id: str) -> int:
         repo.update_job_progress(db, job_id, 0, 0, "Starting...")
         db.commit()
 
-        # Also clear the output log from any previous run
-        log_lines: list[str] = []
-        storage.put_text(f"{report_id}/output_log", "")
-
         # Progress callback
         def on_progress(completed: int, total: int, message: str) -> None:
             write_progress(storage, report_id, completed, total, message)
             repo.update_job_progress(db, job_id, completed, total, message)
             db.commit()
 
+        # ── Per-model state tracking ──
+        # The engine's log lines are the source of truth for which models are
+        # running/done/failed.  Track them here and persist to models.json so
+        # the UI shows the authoritative checklist without re-parsing the
+        # (truncated) log tail.
+        requested_models: list[str] = args.train_group if isinstance(args.train_group, list) else []
+        model_states: dict[str, dict[str, Any]] = {
+            name: {"name": name, "state": "pending", "score": None, "note": ""}
+            for name in requested_models
+        }
+        current_model: str | None = None
+
+        def _persist_models() -> None:
+            with contextlib.suppress(Exception):
+                write_models(storage, report_id, list(model_states.values()))
+
+        def _track_model_line(msg: str) -> None:
+            nonlocal current_model
+
+            m = re.match(r"^Evaluating model:\s*(\S+)", msg.strip())
+            if m:
+                current_model = m.group(1)
+                if current_model in model_states:
+                    model_states[current_model]["state"] = "running"
+                    _persist_models()
+                return
+            m = re.match(r"^Best params:.*\bscore:\s*(-?[\d.]+)", msg.strip())
+            if m and current_model and current_model in model_states:
+                model_states[current_model]["state"] = "done"
+                with contextlib.suppress(Exception):
+                    model_states[current_model]["score"] = float(m.group(1))
+                _persist_models()
+                return
+            m = re.match(r"^(\S+) training complete\.$", msg.strip())
+            if m and m.group(1) in model_states:
+                model_states[m.group(1)]["state"] = "done"
+                _persist_models()
+                return
+            m = re.match(r"^Skipping\s+(\S+?)(?:\s+[—–-]\s+)(.+)$", msg.strip())
+            if m:
+                name = m.group(1).rstrip(":,;")
+                if name in model_states:
+                    model_states[name]["state"] = "skipped"
+                    model_states[name]["note"] = m.group(2)
+                    _persist_models()
+                return
+            m = re.match(
+                r"^Error in (?:training|clustering|train/evaluation of)\s+(\S+)", msg.strip()
+            )
+            if m:
+                name = m.group(1).rstrip(":,;")
+                if name in model_states:
+                    model_states[name]["state"] = "failed"
+                    model_states[name]["note"] = "error — see log"
+                    _persist_models()
+
+        _persist_models()
+
         # Log callback — writes incrementally to storage for live streaming
         def on_log(msg: str) -> None:
             log_lines.append(msg)
             with contextlib.suppress(Exception):
                 storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
+            with contextlib.suppress(Exception):
+                _track_model_line(msg)
 
         # Capture the frozen flag BEFORE the faker unfreeze below — the
         # threading-backend decision must reflect how this process started.
@@ -220,17 +288,24 @@ def run_job(job_id: str) -> int:
     except Exception as e:
         traceback.print_exc()
         try:
-            report_uuid = job.report_uuid if job else "unknown"
             repo.update_job_state(db, job_id, "failed", error=str(e))
-            repo.update_report_status(db, report_uuid, "Failed")
+            if report_id is not None:
+                repo.update_report_status(db, report_id, "Failed")
             db.commit()
         except Exception:
             pass
+        # Persist the failure into the output log — the results page log tab
+        # is where users look for the reason a job failed.
+        if storage is not None and report_id is not None:
+            with contextlib.suppress(Exception):
+                from runner.progress import append_log
+
+                append_log(storage, report_id, f"Training failed: {type(e).__name__}: {e}")
         return 1
 
     finally:
         try:
-            if "storage" in dir() and "report_id" in dir():
+            if storage is not None and report_id is not None:
                 clear_cancel_flag(storage, report_id)
         except Exception:
             pass
