@@ -712,6 +712,10 @@ def _supervised_trainer(
                         if best_score < model_best:
                             best_score = model_best
                     model_results.append(model_stats)
+
+                # Canonical per-model completion marker (used by the job
+                # runner's model-state tracking and the UI checklist)
+                _log(f"{model} training complete.", output_f, log_cb)
             except Exception as e:
                 _log(f"Error in train/evaluation of {model}: {e}", output_f, log_cb)
                 traceback.print_exc()
@@ -807,6 +811,10 @@ def _unsupervised_trainer(
                 if best_score < model_best:
                     best_score = model_best
                 model_results.append(model_stats)
+
+            # Canonical per-model completion marker (used by the job runner's
+            # model-state tracking and the UI checklist)
+            _log(f"{model} training complete.", output_f, log_cb)
         except Exception as e:
             _log(f"Error in train/evaluation of {model}: {e}", output_f, log_cb)
             traceback.print_exc()
