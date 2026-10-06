@@ -86,9 +86,12 @@
       // Failed runs land on the Output Log so the error is front and center
       if (report.status === "Failed") {
         activeTab = "log";
+        // The log is only fetched for Processed runs otherwise — failed
+        // jobs always have a log explaining why they failed
+        await loadLog();
       }
 
-      if (report.status === "Processed") {
+      if (report.status === "Processed" || report.status === "Failed") {
         await Promise.all([loadRunData(), loadMetricDefs()]);
       }
     } catch {
@@ -209,9 +212,9 @@
     outputLog = "";
     shapRows = [];
     shapColumns = [];
-    if (report?.status === "Processed") {
-      loadRunData();
-    }
+    loadRunData();
+    // Land on the most useful tab for the selected run
+    activeTab = selectedRun?.state === "failed" ? "log" : "table";
   }
 
   function download(suffix: string, _label: string) {
@@ -321,8 +324,9 @@
     </div>
   </div>
 
-  <!-- Run history selector -->
-  {#if runs.length > 1 && report.status === "Processed"}
+  <!-- Run history selector: only when the results view is actually rendered —
+       hidden during active/queued training (the progress card replaces it) -->
+  {#if runs.length > 1 && (report.status === "Processed" || report.status === "Failed")}
     <div class="d-flex align-items-center gap-2 mb-3">
       <label class="form-label mb-0 text-muted small fw-bold" for="run-select">Run:</label>
       <select
@@ -334,7 +338,7 @@
       >
         {#each runs as run}
           <option value={run.job_id}>
-            {run.is_current ? "Latest" : "Archived"} — {formatDate(run.created_at)}
+            {run.is_current ? "Latest" : "Archived"} — {formatDate(run.created_at)} ({run.state})
             {#if run.args?.train_group}
               ({Array.isArray(run.args.train_group)
                 ? run.args.train_group.join(", ")
@@ -371,7 +375,7 @@
       <a href={`#/prepare/${reportId}`} class="alert-link">Go to Prepare page</a>
     </div>
   {:else}
-    {#if report.status === "Failed"}
+    {#if report.status === "Failed" && selectedRunIsCurrent}
       <div class="alert alert-danger mb-3">
         Training failed. Check the Output Log tab for details.
         <button

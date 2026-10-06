@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from typing import Any
 
@@ -16,7 +17,9 @@ from classify_api.db import get_session
 from classify_api.schemas.jobs import JobListResponse, JobResponse, TrainRequest
 from classify_api.settings import Settings, get_settings
 from ml.options import get_options
-from runner.cancellation import set_cancel_flag
+from runner.cancellation import clear_cancel_flag, set_cancel_flag
+from runner.manager import get_manager
+from runner.progress import append_log
 from runner.queue import enqueue, get_job, list_jobs, mark_stale_jobs_failed, set_state
 from storage.factory import get_storage
 
@@ -153,6 +156,11 @@ def start_training(
     repo.update_report_status(db, request.report_id, "Queued")
     db.commit()
 
+    # A new job must start with a clean slate: a cancel flag left over from a
+    # previous killed/failed run would cancel this one instantly. (The flag
+    # is per-report and only ever means "stop the currently running worker".)
+    clear_cancel_flag(get_storage(), request.report_id)
+
     return _serialize_job(job)
 
 
@@ -196,18 +204,26 @@ def cancel_job(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     if job.state == "queued":
-        # Just remove from queue; restore the report's pre-queue status
+        # Just remove from queue; restore the report's pre-queue status.
+        # The job never started, so create its (empty) output log with the
+        # reason — failed jobs always have a log tab entry.
         set_state(db, job_id, "failed", error="Cancelled by user")
+        with contextlib.suppress(Exception):
+            append_log(get_storage(), job.report_uuid, "Queued job cancelled before starting.")
         prev_status = (job.args or {}).get("prev_report_status")
         repo.update_report_status(db, job.report_uuid, prev_status or "Failed")
         db.commit()
         return {"status": "cancelled", "message": "Queued job cancelled"}
 
     if job.state in ("running", "cancelling"):
+        # Kill the worker immediately. A cooperative flag alone would let the
+        # current model run to completion first (which can take an hour of
+        # tuning) — partial artifacts of the killed run are archived/cleared
+        # by the next run of the same dataset.
         storage = get_storage()
         set_cancel_flag(storage, job.report_uuid)
         set_state(db, job_id, "cancelling")
-        # The manager will detect the cancel flag and kill the subprocess
+        get_manager().cancel_current_job()
         return {"status": "cancelling", "message": "Cancellation requested"}
 
     return {"status": job.state, "message": f"Job is already {job.state}"}
@@ -259,6 +275,22 @@ async def job_events(
                     pass
                 log_tail = log_text[-10000:] if len(log_text) > 10000 else log_text
                 log_len = len(log_text)
+                # A queued job hasn't started: any log on disk belongs to a
+                # previous run and must not initialize the checklist.
+                if state == "queued":
+                    log_tail = ""
+                    log_len = 0
+
+                # Authoritative per-model states (written by the worker); the
+                # log tail is display-only and truncated, so the checklist
+                # must not be derived from it.
+                from runner.progress import read_models
+
+                model_states = (
+                    read_models(storage, report_id)
+                    if state in ("running", "succeeded", "failed")
+                    else None
+                )
 
                 # Emit event if progress or log changed, or job is done
                 current = (
@@ -276,6 +308,7 @@ async def job_events(
                         "report_uuid": current_job.report_uuid,
                         "state": state,
                         "args": current_job.args,
+                        "models": model_states,
                         "progress": progress.completed if progress else current_job.progress,
                         "progress_total": progress.total
                         if progress

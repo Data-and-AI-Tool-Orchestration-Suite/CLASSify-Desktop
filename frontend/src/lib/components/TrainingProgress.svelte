@@ -1,6 +1,17 @@
 <script lang="ts">
   import type { JobResponse } from "$lib/api/client";
 
+  interface ModelRunState {
+    name: string;
+    state: "pending" | "running" | "done" | "skipped" | "failed";
+    score: number | null;
+    note: string;
+  }
+
+  interface JobWithModels extends JobResponse {
+    models?: ModelRunState[] | null;
+  }
+
   let { job, log, oncancel } = $props<{
     job: JobResponse | null;
     log: string;
@@ -18,7 +29,23 @@
 
   let logEl = $state<HTMLPreElement | null>(null);
 
+  // The worker persists authoritative per-model states (models.json via the
+  // SSE payload). Only when that's unavailable (e.g. the polling fallback)
+  // do we fall back to parsing the log tail — which is truncated, so states
+  // derived from it can "slide" on long runs.
   const models = $derived.by(() => {
+    const typed = job as JobWithModels | null;
+    const reported = typed?.models;
+
+    if (Array.isArray(reported) && reported.length > 0) {
+      return reported.map((m) => ({
+        name: m.name,
+        state: (m.state as ModelState) ?? "pending",
+        score: typeof m.score === "number" ? m.score : null,
+        note: m.note ?? "",
+      }));
+    }
+
     const requested: string[] = Array.isArray(job?.args?.train_group) ? job!.args.train_group : [];
     const map = new Map<string, ModelInfo>();
     for (const name of requested) {
@@ -51,6 +78,12 @@
       if (m && current) {
         current.state = "done";
         current.score = Number.parseFloat(m[1]);
+        continue;
+      }
+      m = line.match(/^(\S+) training complete\.$/);
+      if (m) {
+        const info = ensure(m[1]);
+        info.state = "done";
         continue;
       }
       m = line.match(/^Skipping\s+(\S+?)(?:\s+[—–-]\s+)(.+)$/);

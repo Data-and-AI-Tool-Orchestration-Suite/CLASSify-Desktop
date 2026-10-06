@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from classify_api.db import reset_engine, run_migrations
 from classify_api.main import create_app
 from classify_api.settings import reset_settings
-from storage.factory import reset_storage
+from storage.factory import get_storage, reset_storage
 
 SMALL_CSV = b"""feature_1,feature_2,class
 3.5,10,1
@@ -150,6 +150,60 @@ class TestJobSubmission:
         assert body["state"] == "queued"
         stored_args = body["args"] or {}
         assert "class_column" not in stored_args
+
+    def test_cancel_running_job_kills_it_immediately(self, tmp_data_dir: object) -> None:
+        """Cancelling a running job kills the worker right away.
+
+        Regression: cancel only set a cooperative flag that the worker
+        checked BETWEEN models, so the current model ran to completion
+        (potentially an hour of tuning) before the job ended — and a
+        single-model job ignored the cancel entirely and succeeded.
+        """
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            assert resp.status_code == 200
+            job_id = resp.json()["id"]
+
+            # Cancel immediately — the worker is booting or mid-training
+            resp = client.post(f"/api/jobs/{job_id}/cancel")
+            assert resp.status_code == 200
+            assert resp.json()["status"] in ("cancelling", "cancelled")
+
+            # The job must reach a terminal cancelled state promptly — well
+            # before the model would finish training (~10s+)
+            deadline = time.time() + 30
+            final = None
+            while time.time() < deadline:
+                status = client.get(f"/api/jobs/{job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    final = status
+                    break
+                time.sleep(0.5)
+            assert final is not None, "job did not terminate within 30s of cancel"
+            assert final["state"] == "failed", f"cancel was ignored: {final}"
+            assert "cancel" in (final["error"] or "").lower()
+
+            # The dataset must not be stuck in Processing
+            report = client.get(f"/api/datasets/{report_id}").json()
+            assert report["status"] != "Processing"
+
+            # The log tab must show the cancellation — even when the kill
+            # landed before the worker created its log
+            log = client.get(f"/api/results/{report_id}/output-log").json()
+            assert log["success"] is True, "cancelled job has no output log"
+            assert "cancel" in log["log"].lower()
 
     def test_unsupervised_after_class_mapping_flow(self, tmp_data_dir: object) -> None:
         """Regression: unsupervised training on a dataset that went through
@@ -378,6 +432,30 @@ class TestJobSubmission:
             report = client.get(f"/api/datasets/{report_id}").json()
             assert report["status"] == "Uploaded"
 
+    def test_cancelled_queued_job_has_output_log(self, tmp_data_dir: object) -> None:
+        """Failed jobs always have an output log — even ones cancelled while
+        still queued and never started."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+            client.post(f"/api/jobs/{job_id}/cancel")
+
+            log = client.get(f"/api/results/{report_id}/output-log").json()
+            assert log["success"] is True
+            assert "cancelled before starting" in log["log"]
+
     def test_sse_events_include_args(self, tmp_data_dir: object) -> None:
         """The SSE progress stream must include job args so the frontend can
         show the full requested model list (regression: the list only showed
@@ -542,6 +620,191 @@ class TestJobExecution:
             # Check it's failed
             status_resp = client.get(f"/api/jobs/{job_id}")
             assert status_resp.json()["state"] in ("failed", "cancelling")
+
+    def test_stale_cancel_flag_does_not_kill_new_jobs(self, tmp_data_dir: object) -> None:
+        """A leftover cancel flag (from a hard-killed worker) must not cancel
+        newly enqueued jobs on the same dataset.
+
+        Regression: cancelling a running job hard-kills the worker, which
+        dies before clearing its cancel flag; if the flag leaked (orphaned
+        worker, app restart), every rerun on that dataset instant-failed
+        with 'Cancelled by user'.
+        """
+        from runner.cancellation import set_cancel_flag
+
+        storage = get_storage()
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            # Simulate a leaked flag from a previous killed run
+            set_cancel_flag(storage, report_id)
+
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+
+            for _ in range(120):
+                status = client.get(f"/api/jobs/{job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    break
+                time.sleep(1)
+
+            assert status["state"] == "succeeded", (
+                f"stale cancel flag killed the new job: {status.get('error')}"
+            )
+
+    def test_model_states_track_run_per_model(self, tmp_data_dir: object) -> None:
+        """The worker persists per-model states so the checklist is accurate.
+
+        Regression: the UI derived model states from the truncated 10KB log
+        tail, so on long runs early models reverted to 'pending' and the
+        'done' set slid down; a queued rerun initialized from the previous
+        run's log.
+        """
+        from runner.progress import read_models
+
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "train_group", "value": "spectralclustering"},
+                        {"name": "train_group", "value": "hdbscan"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+
+            for _ in range(120):
+                status = client.get(f"/api/jobs/{job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    break
+                time.sleep(1)
+
+            assert status["state"] == "succeeded", status.get("error")
+
+            states = {m["name"]: m["state"] for m in read_models(get_storage(), report_id) or []}
+            # hdbscan trains but finds only noise on this dataset — it is
+            # processed successfully (the report skips it later)
+            assert states == {
+                "kmeans": "done",
+                "spectralclustering": "done",
+                "hdbscan": "done",
+            }
+
+    def test_failed_job_has_output_log_with_reason(self, tmp_data_dir: object) -> None:
+        """A job failing before training (missing dataset file) still leaves
+        an output log explaining the failure."""
+        from runner.jobworker import run_job
+
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            job_id = resp.json()["id"]
+
+            # Break the dataset so the worker fails before training starts
+            get_storage().delete(f"{report_id}/file")
+            run_job(job_id)
+
+            status = client.get(f"/api/jobs/{job_id}").json()
+            assert status["state"] == "failed"
+
+            log = client.get(f"/api/results/{report_id}/output-log").json()
+            assert log["success"] is True
+            assert "Training failed:" in log["log"]
+
+    def test_failed_run_log_survives_next_run(self, tmp_data_dir: object) -> None:
+        """A failed run's log must be archived — not deleted — when the next
+        run starts, so cancelled/failed jobs keep their diagnostic record."""
+        client, report_id = _setup_and_upload(tmp_data_dir)
+        with client:
+            # First job: fails before training (dataset file removed)
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            failed_job_id = resp.json()["id"]
+            get_storage().delete(f"{report_id}/file")
+
+            # Wait for the manager to run it to failure
+            for _ in range(60):
+                status = client.get(f"/api/jobs/{failed_job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    break
+                time.sleep(1)
+            assert status["state"] == "failed"
+
+            # Restore the dataset and start a second run
+            resp = client.post(
+                "/api/datasets/upload",
+                files={"file": ("test.csv", io.BytesIO(SMALL_CSV), "text/csv")},
+            )
+            second_report = resp.json()["report_id"]
+            get_storage().copy(f"{second_report}/file", f"{report_id}/file")
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "report_id": report_id,
+                    "options": [
+                        {"name": "supervised", "value": "false"},
+                        {"name": "train_group", "value": "kmeans"},
+                        {"name": "parameter_tune", "value": "false"},
+                        {"name": "visualize", "value": "false"},
+                    ],
+                },
+            )
+            second_job_id = resp.json()["id"]
+            for _ in range(120):
+                status = client.get(f"/api/jobs/{second_job_id}").json()
+                if status["state"] in ("succeeded", "failed"):
+                    break
+                time.sleep(1)
+            assert status["state"] == "succeeded", status.get("error")
+
+            # The failed run's log must survive in the archive
+            archived = client.get(
+                f"/api/results/{report_id}/runs/{failed_job_id}/output-log"
+            ).json()
+            assert archived["success"] is True
+            assert "Training failed:" in archived["log"]
+
+            # And the run history must list both runs
+            runs = client.get(f"/api/results/{report_id}/runs").json()["runs"]
+            assert {r["job_id"] for r in runs} >= {failed_job_id, second_job_id}
 
 
 class TestCrashRecovery:
