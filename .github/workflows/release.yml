@@ -53,7 +53,7 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "size=$size"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: dist/installers/CLASSify-Setup-*.exe
@@ -108,7 +108,7 @@ jobs:
           echo "size=$size" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: dist/CLASSify-*-macos.zip
@@ -167,7 +167,7 @@ jobs:
           echo "size=$size" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-installer
           path: dist/CLASSify-*-linux.tar.gz
