@@ -28,6 +28,7 @@ _REGISTRY: dict[str, str] = {
     "tabpfn": "tabpfn",
     "sdv": "sdv",
     "torch": "torch",
+    "darts": "darts",
 }
 
 _CACHE: dict[str, bool] = {}
@@ -75,3 +76,8 @@ def tabpfn_available() -> bool:
 def sdv_available() -> bool:
     """Convenience: is SDV available (requires torch + sdv)?"""
     return is_available("torch") and is_available("sdv")
+
+
+def darts_available() -> bool:
+    """Convenience: is the Darts forecasting engine available?"""
+    return is_available("darts")

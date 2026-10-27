@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from classify_api import repositories as repo
 from classify_api.db import get_session
 from classify_api.schemas.datasets import (
+    TS_ROLES,
     ClassMappingRequest,
     ClassValuesResponse,
     ColumnChangesRequest,
@@ -29,6 +30,9 @@ from classify_api.schemas.datasets import (
     DatasetUploadResponse,
     ParametersResponse,
     SuccessResponse,
+    TsRoleRequest,
+    TsRolesRequest,
+    TsRolesResponse,
 )
 from classify_api.settings import Settings, get_settings
 from ml.column_types import (
@@ -231,10 +235,78 @@ def column_changes(
     # Update report status
     repo.update_report_status(db, report_id, "Uploaded")
     repo.update_report_column_changes(db, report_id, {"changes": changes_data})
+    repo.update_report_mode(db, report_id, "classification")
     db.commit()
 
     return ColumnChangesResponse(
         success=True, message="Uploaded to storage", data_types=changes_data
+    )
+
+
+# ── E3b: Time-series roles (forecasting mode) ──
+
+
+@router.post("/{report_id}/ts-roles", response_model=TsRolesResponse)
+def set_ts_roles(
+    report_id: str,
+    request: TsRolesRequest,
+    db: Session = Depends(get_session),
+) -> TsRolesResponse:
+    """Save forecasting column roles (time component, target, covariates...).
+
+    Unlike classification column changes, no data transformation happens —
+    the forecasting engine reads the original file and handles date parsing,
+    missing values and categorical encoding itself.
+    """
+    _get_report_or_404(db, report_id)
+
+    storage = get_storage()
+    key = f"{report_id}/original_file"
+    if not storage.exists(key):
+        key = f"{report_id}/file"
+    try:
+        raw = storage.get_bytes(key)
+        encoding = detect_encoding(raw)
+        df = pd.read_csv(StringIO(raw.decode(encoding)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}") from e
+
+    dataset_columns = set(df.columns)
+    roles: list[dict[str, str]] = []
+    for r in request.roles:
+        if r.role not in TS_ROLES:
+            raise HTTPException(status_code=400, detail=f"Unknown role '{r.role}'")
+        if r.column not in dataset_columns:
+            raise HTTPException(status_code=400, detail=f"Column '{r.column}' not found in dataset")
+        if r.role != "not-included":
+            roles.append({"column": r.column, "role": r.role})
+
+    time_components = [r["column"] for r in roles if r["role"] == "time-component"]
+    targets = [r["column"] for r in roles if r["role"] == "target"]
+    groupings = [r["column"] for r in roles if r["role"] == "grouping"]
+    if len(time_components) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="You must have exactly one column selected for the Time Component.",
+        )
+    if len(targets) < 1:
+        raise HTTPException(
+            status_code=400, detail="You must have at least one target variable selected."
+        )
+    if len(groupings) > 1:
+        raise HTTPException(status_code=400, detail="You can select at most one Grouping column.")
+
+    repo.update_report_column_changes(db, report_id, {"ts_roles": roles})
+    repo.update_report_mode(db, report_id, "forecasting")
+    report = repo.get_report(db, report_id)
+    if report is not None and report.status in ("Preview", "Uploaded"):
+        repo.update_report_status(db, report_id, "Uploaded")
+    db.commit()
+
+    return TsRolesResponse(
+        success=True,
+        message="Time-series roles saved",
+        roles=[TsRoleRequest(**r) for r in roles],
     )
 
 
@@ -330,6 +402,41 @@ async def upload_testset(
     storage.put_text(f"{report_id}/testset", csv_buf.getvalue())
 
     return SuccessResponse(success=True, message="Testset uploaded")
+
+
+# ── E5b: Retrain data upload (forecasting mode) ──
+
+
+@router.post("/{report_id}/retrain-data", response_model=SuccessResponse)
+async def upload_retrain_data(
+    report_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+) -> SuccessResponse:
+    """Upload a new-data CSV for retraining forecasting models.
+
+    The file must follow the same format as the original dataset; the
+    forecasting engine appends it to the existing series when retrain=true.
+    """
+    _get_report_or_404(db, report_id)
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+
+    raw = await file.read()
+    encoding = detect_encoding(raw)
+    try:
+        text = raw.decode(encoding)
+        retrain_df = pd.read_csv(StringIO(text))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}") from e
+
+    storage = get_storage()
+    csv_buf = StringIO()
+    retrain_df.to_csv(csv_buf, index=False)
+    storage.put_text(f"{report_id}/retrain_file", csv_buf.getvalue())
+
+    return SuccessResponse(success=True, message="Retrain data uploaded")
 
 
 # ── E6: Duplicate ──

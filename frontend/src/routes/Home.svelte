@@ -14,6 +14,7 @@
   let showUpload = $state(false);
   let searchQuery = $state("");
   let filter = $state<"all" | "trained" | "drafts" | "failed">("all");
+  let modeFilter = $state<"all" | "classification" | "forecasting">("all");
 
   async function loadReports() {
     loading = true;
@@ -86,6 +87,18 @@
     return map[status] ?? "bg-secondary";
   }
 
+  function datasetMode(report: DatasetRow): "classification" | "forecasting" | null {
+    if (report.mode === "forecasting") return "forecasting";
+    if (report.mode === "classification") return "classification";
+    return null;
+  }
+
+  function modeLabel(mode: string | null): string {
+    if (mode === "forecasting") return "Forecasting";
+    if (mode === "classification") return "Classification";
+    return "Unconfigured";
+  }
+
   function isDraft(status: string): boolean {
     return ["Preview", "Uploaded"].includes(status);
   }
@@ -97,6 +110,7 @@
 
   const filtered = $derived(
     reports.filter((r) => {
+      if (modeFilter !== "all" && datasetMode(r) !== modeFilter) return false;
       if (filter === "all") return true;
       if (filter === "trained") return r.status === "Processed";
       if (filter === "drafts") return isDraft(r.status);
@@ -110,6 +124,18 @@
     drafts: reports.filter((r) => isDraft(r.status)).length,
     failed: reports.filter((r) => r.status === "Failed").length,
   });
+
+  const modeCounts = $derived({
+    all: reports.length,
+    classification: reports.filter((r) => datasetMode(r) === "classification").length,
+    forecasting: reports.filter((r) => datasetMode(r) === "forecasting").length,
+  });
+
+  const modeFilters: { key: typeof modeFilter; label: string }[] = [
+    { key: "all", label: "All modes" },
+    { key: "classification", label: "Classification" },
+    { key: "forecasting", label: "Forecasting" },
+  ];
 
   const filters: { key: typeof filter; label: string }[] = [
     { key: "all", label: "All" },
@@ -127,6 +153,20 @@
 </div>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <div class="btn-group" role="group" aria-label="Filter by modeling mode">
+    {#each modeFilters as mf (mf.key)}
+      <button
+        type="button"
+        class="btn btn-sm {modeFilter === mf.key ? 'btn-primary' : 'btn-outline-secondary'}"
+        onclick={() => (modeFilter = mf.key)}
+      >
+        {mf.label}
+        <span class="badge ms-1 {modeFilter === mf.key ? 'bg-light text-dark' : 'bg-secondary'}">
+          {modeCounts[mf.key]}
+        </span>
+      </button>
+    {/each}
+  </div>
   <div class="btn-group" role="group" aria-label="Filter datasets">
     {#each filters as f (f.key)}
       <button
@@ -174,6 +214,7 @@
       <thead>
         <tr>
           <th>Filename</th>
+          <th>Mode</th>
           <th>Status</th>
           <th>Created</th>
           <th>Comments</th>
@@ -187,6 +228,17 @@
               <a href={openHref(report)} class="text-decoration-none fw-medium">
                 {report.filename}
               </a>
+            </td>
+            <td>
+              <span
+                class="badge {datasetMode(report) === 'forecasting'
+                  ? 'text-bg-dark'
+                  : datasetMode(report) === 'classification'
+                    ? 'text-bg-primary'
+                    : 'text-bg-light'}"
+              >
+                {modeLabel(datasetMode(report))}
+              </span>
             </td>
             <td>
               <span class="badge {statusBadge(report.status)}">

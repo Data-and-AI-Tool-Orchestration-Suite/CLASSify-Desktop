@@ -7,8 +7,10 @@ Prediction Insights (SHAP), Output Log.
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -60,7 +62,14 @@ def get_results(
         return ResultsResponse(success=False)
 
     columns = df.columns.tolist()
-    rows = df.to_dict(orient="records")
+    # Empty grouping/component cells ("averaged across all") must stay empty
+    # strings — null would break the frontend's row matching.
+    for col in ("grouping", "component"):
+        if col in df.columns:
+            df[col] = df[col].fillna("")
+    # Remaining NaN would serialize as an invalid JSON `NaN` token — map it
+    # to null instead.
+    rows = df.replace({np.nan: None}).to_dict(orient="records")
 
     # Try to read results.json if it exists
     results_json: dict[str, Any] | None = None
@@ -117,7 +126,42 @@ def get_visualization(
     return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
 
 
-# â”€â”€ G3: SHAP rows â”€â”€
+# ── G2b: Forecast chart data (forecasting mode) ──
+
+
+def _read_json_artifact(prefix: str, name: str) -> dict[str, Any]:
+    storage = get_storage()
+    try:
+        parsed: dict[str, Any] = json.loads(storage.get_text(f"{prefix}/{name}"))
+        return parsed
+    except KeyNotFound:
+        raise HTTPException(status_code=404, detail=f"'{name}' not found") from None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read '{name}': {e}") from e
+
+
+@router.get("/{report_id}/forecast-data/{model}")
+def get_forecast_data(
+    report_id: str,
+    model: str,
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Get the per-model interactive chart data (train/val/pred series)."""
+    _get_report_or_404(db, report_id)
+    return _read_json_artifact(report_id, f"forecast_data_{model}")
+
+
+@router.get("/{report_id}/forecasts")
+def get_future_forecasts(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Get generated future forecasts (from a forecast-generation job)."""
+    _get_report_or_404(db, report_id)
+    return _read_json_artifact(report_id, "forecasts")
+
+
+# ── G3: SHAP rows ──
 
 
 @router.get("/{report_id}/shap-rows/{model}", response_model=ShapRowsResponse)
@@ -276,13 +320,21 @@ def download_artifact(
         "retest",
         "labeled",
         "retest_results",
+        "retrain_file",
+        "future_covariates",
     ):
         media_type = "text/csv"
-    elif suffix.endswith(".json") or suffix in (
-        "results.json",
-        "progress.json",
-        "metadata",
-        "synthetic_metrics",
+    elif (
+        suffix.endswith(".json")
+        or suffix
+        in (
+            "results.json",
+            "progress.json",
+            "metadata",
+            "synthetic_metrics",
+            "forecasts",
+        )
+        or suffix.startswith("forecast_data_")
     ):
         media_type = "application/json"
     elif suffix.startswith("viz/"):
@@ -311,7 +363,7 @@ def get_prepare_params(
     """Get previous training parameters for rerun-with-same-params."""
     _get_report_or_404(db, report_id)
 
-    job = repo.get_job_by_report(db, report_id)
+    job = repo.get_current_run_job(db, report_id)
     if job is None or job.args is None:
         return PrepareParamsResponse(success=False)
 
@@ -341,7 +393,7 @@ def list_runs(
     _get_report_or_404(db, report_id)
 
     storage = get_storage()
-    current_job = repo.get_job_by_report(db, report_id)
+    current_job = repo.get_current_run_job(db, report_id)
     current_job_id = current_job.id if current_job else None
 
     runs: list[RunInfo] = []
@@ -384,7 +436,7 @@ def get_run_results(
     storage = get_storage()
 
     job = repo.get_job(db, job_id)
-    current_job = repo.get_job_by_report(db, report_id)
+    current_job = repo.get_current_run_job(db, report_id)
     prefix = (
         report_id
         if (current_job and job and job.id == current_job.id)
@@ -413,7 +465,7 @@ def get_run_output_log(
     storage = get_storage()
 
     job = repo.get_job(db, job_id)
-    current_job = repo.get_job_by_report(db, report_id)
+    current_job = repo.get_current_run_job(db, report_id)
     prefix = (
         report_id
         if (current_job and job and job.id == current_job.id)
@@ -428,6 +480,61 @@ def get_run_output_log(
     return OutputLogResponse(success=True, log=log_text)
 
 
+@router.get("/{report_id}/forecast-generation-log")
+def get_forecast_generation_log(
+    report_id: str,
+    db: Session = Depends(get_session),
+) -> OutputLogResponse:
+    """Get the log of the latest forecast-generation job (kept separate from
+    the training output_log so generating forecasts preserves both)."""
+    _get_report_or_404(db, report_id)
+    storage = get_storage()
+    try:
+        log_text = storage.get_text(f"{report_id}/forecast_generation_log")
+    except KeyNotFound:
+        return OutputLogResponse(success=False, log="")
+    return OutputLogResponse(success=True, log=log_text)
+
+
+@router.get("/{report_id}/runs/{job_id}/forecast-data/{model}")
+def get_run_forecast_data(
+    report_id: str,
+    job_id: str,
+    model: str,
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Get per-model chart data for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_current_run_job(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+    return _read_json_artifact(prefix, f"forecast_data_{model}")
+
+
+@router.get("/{report_id}/runs/{job_id}/forecasts")
+def get_run_future_forecasts(
+    report_id: str,
+    job_id: str,
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Get generated future forecasts for a specific (archived or current) run."""
+    _get_report_or_404(db, report_id)
+
+    job = repo.get_job(db, job_id)
+    current_job = repo.get_current_run_job(db, report_id)
+    prefix = (
+        report_id
+        if (current_job and job and job.id == current_job.id)
+        else _archive_prefix(report_id, job_id)
+    )
+    return _read_json_artifact(prefix, "forecasts")
+
+
 @router.get("/{report_id}/runs/{job_id}/viz", response_model=VizListResponse)
 def list_run_visualizations(
     report_id: str,
@@ -439,7 +546,7 @@ def list_run_visualizations(
     storage = get_storage()
 
     job = repo.get_job(db, job_id)
-    current_job = repo.get_job_by_report(db, report_id)
+    current_job = repo.get_current_run_job(db, report_id)
     prefix = (
         report_id
         if (current_job and job and job.id == current_job.id)
@@ -464,7 +571,7 @@ def get_run_visualization(
     storage = get_storage()
 
     job = repo.get_job(db, job_id)
-    current_job = repo.get_job_by_report(db, report_id)
+    current_job = repo.get_current_run_job(db, report_id)
     prefix = (
         report_id
         if (current_job and job and job.id == current_job.id)

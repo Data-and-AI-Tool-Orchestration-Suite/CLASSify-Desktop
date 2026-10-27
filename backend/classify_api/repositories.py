@@ -108,6 +108,13 @@ def update_report_column_changes(db: Session, report_uuid: str, changes: dict[st
         db.flush()
 
 
+def update_report_mode(db: Session, report_uuid: str, mode: str) -> None:
+    report = db.get(Report, report_uuid)
+    if report:
+        report.mode = mode
+        db.flush()
+
+
 def update_report_job_id(db: Session, report_uuid: str, job_id: str) -> None:
     report = db.get(Report, report_uuid)
     if report:
@@ -142,6 +149,22 @@ def get_job_by_report(db: Session, report_uuid: str) -> Job | None:
     return db.scalar(
         select(Job).where(Job.report_uuid == report_uuid).order_by(desc(Job.created_at))
     )
+
+
+def get_current_run_job(db: Session, report_uuid: str) -> Job | None:
+    """Latest job for a report that owns a run.
+
+    Forecast-generation jobs are additive to the last training run (they only
+    write forecasts + a generation log), so they never become the "current
+    run" — the run selector and artifact resolution stick to training jobs.
+    """
+    jobs = db.scalars(
+        select(Job).where(Job.report_uuid == report_uuid).order_by(desc(Job.created_at))
+    ).all()
+    for job in jobs:
+        if (job.args or {}).get("mode") != "forecast-generation":
+            return job
+    return None
 
 
 def get_previous_job_by_report(db: Session, report_uuid: str, exclude_job_id: str) -> Job | None:
@@ -326,6 +349,7 @@ def serialize_report(report: Report) -> dict[str, Any]:
         "filename": report.filename,
         "original_filename": report.original_filename,
         "status": report.status,
+        "mode": report.mode,
         "job_id": report.job_id,
         "column_changes": report.column_changes,
         "comments": report.comments,

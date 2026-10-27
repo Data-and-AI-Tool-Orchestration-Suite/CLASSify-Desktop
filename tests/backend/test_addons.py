@@ -32,6 +32,7 @@ class TestAddonManifest:
     def test_builtin_addons_exist(self) -> None:
         assert "tabpfn" in BUILTIN_ADDONS
         assert "sdv" in BUILTIN_ADDONS
+        assert "forecast" in BUILTIN_ADDONS
 
     def test_tabpfn_manifest(self) -> None:
         m = BUILTIN_ADDONS["tabpfn"]
@@ -46,16 +47,23 @@ class TestAddonManifest:
         assert "sdv" in m.provides
         assert "torch" in m.provides
 
+    def test_forecast_manifest(self) -> None:
+        m = BUILTIN_ADDONS["forecast"]
+        assert m.name == "forecast"
+        assert "darts" in m.provides
+        assert any(dep.startswith("darts") for dep in m.pip_deps)
+
 
 class TestAddonRegistry:
     def test_list_available_addons(self, tmp_data_dir: object) -> None:
         client = _setup(tmp_data_dir)
         with client:
             addons = list_available_addons()
-        assert len(addons) == 2
+        assert len(addons) == 3
         names = [a["name"] for a in addons]
         assert "tabpfn" in names
         assert "sdv" in names
+        assert "forecast" in names
         for a in addons:
             assert "installed" in a
             assert a["installed"] is False  # nothing installed in fresh env
@@ -83,7 +91,7 @@ class TestAddonEndpoints:
             resp = client.get("/api/addons")
         assert resp.status_code == 200
         body = resp.json()
-        assert len(body["addons"]) == 2
+        assert len(body["addons"]) == 3
         for a in body["addons"]:
             assert a["installed"] is False
             assert a["size_estimate_mb"] > 0

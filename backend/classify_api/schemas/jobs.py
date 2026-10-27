@@ -30,7 +30,12 @@ class JobListResponse(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    """POST /api/jobs — start training."""
+    """POST /api/jobs — start training.
+
+    ``mode`` selects the engine: "classification" (supervised or
+    unsupervised) or "forecasting" (time series via the Darts addon).
+    """
 
     report_id: str
     options: list[dict[str, Any]] = Field(default_factory=list)
+    mode: str = "classification"

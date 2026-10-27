@@ -120,6 +120,7 @@ export interface DatasetRow {
   filename: string;
   original_filename: string | null;
   status: string;
+  mode: string | null;
   job_id: string | null;
   column_changes: Record<string, unknown> | null;
   comments: string | null;
@@ -140,6 +141,20 @@ export interface ColumnChange {
   missing: string;
   fill_value: string;
   is_class: boolean;
+}
+
+export type TsRole =
+  | "time-component"
+  | "grouping"
+  | "target"
+  | "past-covariate"
+  | "future-covariate"
+  | "static-covariate"
+  | "not-included";
+
+export interface TsRoleAssignment {
+  column: string;
+  role: TsRole;
 }
 
 export const datasets = {
@@ -204,6 +219,16 @@ export const datasets = {
     }),
   parameters: (id: string) =>
     request<{ success: boolean; args: Record<string, any> | null }>(`/datasets/${id}/parameters`),
+  tsRoles: (id: string, roles: TsRoleAssignment[]) =>
+    request<{ success: boolean; message: string; roles: TsRoleAssignment[] }>(
+      `/datasets/${id}/ts-roles`,
+      {
+        method: "POST",
+        body: JSON.stringify({ roles }),
+      },
+    ),
+  retrainData: (id: string, file: File) =>
+    upload<{ success: boolean; message: string }>(`/datasets/${id}/retrain-data`, file),
 };
 
 // ── Jobs ──
@@ -228,10 +253,14 @@ export interface TrainOption {
 }
 
 export const jobs = {
-  start: (reportId: string, options: TrainOption[]) =>
+  start: (
+    reportId: string,
+    options: TrainOption[],
+    mode: "classification" | "forecasting" = "classification",
+  ) =>
     request<JobResponse>("/jobs", {
       method: "POST",
-      body: JSON.stringify({ report_id: reportId, options }),
+      body: JSON.stringify({ report_id: reportId, options, mode }),
     }),
   list: () => request<{ jobs: JobResponse[] }>("/jobs"),
   get: (jobId: string) => request<JobResponse>(`/jobs/${jobId}`),
@@ -241,6 +270,23 @@ export const jobs = {
   recover: () => request<{ recovered: number }>("/jobs/recover", { method: "POST" }),
   mlOptionsSupervised: () => request<Record<string, unknown>>("/jobs/ml-options/supervised"),
   mlOptionsUnsupervised: () => request<Record<string, unknown>>("/jobs/ml-options/unsupervised"),
+  mlOptionsForecasting: () => request<Record<string, unknown>>("/jobs/ml-options/forecasting"),
+  generateForecasts: (
+    reportId: string,
+    params: { horizon: number; models: string[]; covariatesFile?: File | null },
+  ) => {
+    const form = new FormData();
+    form.append("report_id", reportId);
+    form.append("forecast_horizon", String(params.horizon));
+    form.append("models", params.models.join(","));
+    if (params.covariatesFile) form.append("future_covariates", params.covariatesFile);
+    return fetch(`${BASE}/jobs/forecast-generation`, { method: "POST", body: form }).then(
+      async (resp) => {
+        if (!resp.ok) throw new Error(await errorMessage(resp));
+        return (await resp.json()) as JobResponse;
+      },
+    );
+  },
   sseUrl: (jobId: string) => `${BASE}/jobs/${jobId}/events`,
 };
 
@@ -356,4 +402,33 @@ export const results = {
     request<VizListResponse>(`/results/${reportId}/runs/${jobId}/viz`),
   runVizUrl: (reportId: string, jobId: string, vizName: string) =>
     `${BASE}/results/${reportId}/runs/${jobId}/viz/${vizName}`,
+  forecastData: (reportId: string, model: string) =>
+    request<ForecastChartData>(`/results/${reportId}/forecast-data/${model}`),
+  forecasts: (reportId: string) => request<ForecastsPayload>(`/results/${reportId}/forecasts`),
+  generationLog: (reportId: string) =>
+    request<{ success: boolean; log: string }>(`/results/${reportId}/forecast-generation-log`),
+  runForecastData: (reportId: string, jobId: string, model: string) =>
+    request<ForecastChartData>(`/results/${reportId}/runs/${jobId}/forecast-data/${model}`),
+  runForecasts: (reportId: string, jobId: string) =>
+    request<ForecastsPayload>(`/results/${reportId}/runs/${jobId}/forecasts`),
 };
+
+export interface ForecastChartData {
+  [grouping: string]: {
+    [component: string]: {
+      train_x: string[];
+      train_y: number[];
+      val_x?: string[];
+      val_y?: number[];
+      pred_x: string[];
+      pred_y: number[];
+    };
+  };
+}
+
+export interface ForecastsPayload {
+  [model: string]: {
+    groupings?: Record<string, { components: Record<string, Record<string, number>> }>;
+    components?: Record<string, Record<string, number>>;
+  };
+}

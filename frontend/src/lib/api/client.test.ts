@@ -107,6 +107,29 @@ describe("datasets API", () => {
     expect(call[1].method).toBe("PATCH");
     expect(JSON.parse(call[1].body).comments).toBe("my comment");
   });
+
+  it("datasets.tsRoles() sends POST with role assignments", async () => {
+    const { datasets } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        message: "saved",
+        roles: [{ column: "date", role: "time-component" }],
+      }),
+      text: async () => "",
+    });
+    const roles = [
+      { column: "date", role: "time-component" as const },
+      { column: "sales", role: "target" as const },
+    ];
+    const result = await datasets.tsRoles("abc-123", roles);
+    expect(result.success).toBe(true);
+    const call = mockFetch.mock.calls[0];
+    expect(call[0]).toBe("/api/datasets/abc-123/ts-roles");
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body).roles).toEqual(roles);
+  });
 });
 
 describe("jobs API", () => {
@@ -150,6 +173,73 @@ describe("jobs API", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("jobs.start() forwards forecasting mode", async () => {
+    const { jobs } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "job-2",
+        report_uuid: "r-1",
+        state: "queued",
+        args: null,
+        progress: 0,
+        progress_total: 0,
+        progress_message: null,
+        error: null,
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+      }),
+      text: async () => "",
+    });
+    await jobs.start("r-1", [{ name: "train_group", value: "arima" }], "forecasting");
+    const call = mockFetch.mock.calls[0];
+    expect(call[0]).toBe("/api/jobs");
+    const body = JSON.parse(call[1].body);
+    expect(body.mode).toBe("forecasting");
+    expect(body.options[0].name).toBe("train_group");
+  });
+
+  it("jobs.mlOptionsForecasting() fetches forecasting options", async () => {
+    const { jobs } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ test_size: { type: "float", default: 0.2 } }),
+      text: async () => "",
+    });
+    const result = (await jobs.mlOptionsForecasting()) as {
+      test_size: { default: number };
+    };
+    expect(result.test_size.default).toBe(0.2);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/jobs/ml-options/forecasting");
+  });
+
+  it("jobs.generateForecasts() posts multipart form", async () => {
+    const { jobs } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "job-3",
+        report_uuid: "r-1",
+        state: "queued",
+        args: null,
+        progress: 0,
+        progress_total: 0,
+        progress_message: null,
+        error: null,
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+      }),
+      text: async () => "",
+    });
+    await jobs.generateForecasts("r-1", { horizon: 12, models: ["arima", "lgbm"] });
+    const call = mockFetch.mock.calls[0];
+    expect(call[0]).toBe("/api/jobs/forecast-generation");
+    expect(call[1].method).toBe("POST");
+    expect(call[1].body).toBeInstanceOf(FormData);
+  });
 });
 
 describe("results API", () => {
@@ -181,6 +271,43 @@ describe("results API", () => {
     const url = results.shapRowGraphUrl("r-1", { model: "rf", row_num: 5 });
     expect(url).toContain("model=rf");
     expect(url).toContain("row_num=5");
+  });
+
+  it("results.forecastData() fetches per-model chart data", async () => {
+    const { results } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ "": { sales: { train_x: [], train_y: [], pred_x: [], pred_y: [] } } }),
+      text: async () => "",
+    });
+    const result = await results.forecastData("r-1", "arima");
+    expect(result[""].sales).toBeDefined();
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/results/r-1/forecast-data/arima");
+  });
+
+  it("results.forecasts() fetches generated forecasts", async () => {
+    const { results } = await import("./client");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ arima: { components: { sales: { "2023-01-11": 100 } } } }),
+      text: async () => "",
+    });
+    const result = await results.forecasts("r-1");
+    expect(result.arima?.components?.sales["2023-01-11"]).toBe(100);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/results/r-1/forecasts");
+  });
+
+  it("results.runForecastData() and runForecasts() hit archived run routes", async () => {
+    const { results } = await import("./client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+      text: async () => "",
+    });
+    await results.runForecastData("r-1", "job-9", "arima");
+    await results.runForecasts("r-1", "job-9");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/results/r-1/runs/job-9/forecast-data/arima");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/results/r-1/runs/job-9/forecasts");
   });
 });
 

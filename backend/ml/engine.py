@@ -536,7 +536,7 @@ def write_report(
 def trainer(
     args: Any,
     storage: Storage,
-    full_dataset: pd.DataFrame,
+    full_dataset: pd.DataFrame | None,
     testset: pd.DataFrame | None,
     on_progress: ProgressCallback | None = None,
     log_cb: LogCallback | None = None,
@@ -544,15 +544,27 @@ def trainer(
 ) -> None:
     """Main trainer entry point — replaces CLASSify-2's trainer().
 
+    Dispatches to the forecasting engine for ForecastArgs; the Darts
+    imports stay lazy so the API process never loads them.
+
     Args:
-        args: TrainingArgs instance
+        args: TrainingArgs or ForecastArgs instance
         storage: Storage instance for reading/writing artifacts
-        full_dataset: The processed training dataset
+        full_dataset: The processed training dataset (unused for forecasting —
+            the forecast engine reads its data from storage itself)
         testset: Optional separate testset (None = auto split)
         on_progress: Callback(completed, total, message) for progress updates
         log_cb: Optional callback for log messages
         cancel_token: Object with ``is_set()`` method for cancellation
     """
+    from ml.args import ForecastArgs
+
+    if isinstance(args, ForecastArgs):
+        from ml.forecast.engine import forecast_trainer
+
+        forecast_trainer(args, storage, on_progress, log_cb, cancel_token)
+        return
+
     filename = args.report_uuid
     output_buf = io.StringIO()
 

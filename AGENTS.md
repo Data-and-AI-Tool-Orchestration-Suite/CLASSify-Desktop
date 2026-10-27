@@ -77,11 +77,12 @@ npm run gen-types    # regenerate API types from OpenAPI (needs backend running)
 make ci    # runs lint + typecheck + tests for both backend and frontend
 ```
 
-### Install ML add-on deps (TabPFN/SDV — not in base)
+### Install ML add-on deps (TabPFN/SDV/Darts — not in base)
 
 ```bash
-pip install -e ".[tabpfn]"   # pulls torch + tabpfn
-pip install -e ".[sdv]"      # pulls torch + sdv
+pip install -e ".[tabpfn]"     # pulls torch + tabpfn
+pip install -e ".[sdv]"        # pulls torch + sdv
+pip install -e ".[forecast]"   # pulls darts + torch (Forecasting mode)
 ```
 
 ## Code layout
@@ -90,6 +91,7 @@ pip install -e ".[sdv]"      # pulls torch + sdv
 backend/
   classify_api/   → FastAPI app, routers, schemas, ORM, settings
   ml/             → training engine, evaluation, SHAP, synthesis, viz, retest
+  ml/forecast/    → Darts forecasting engine (port of the Forecaster web app)
   storage/        → LocalStorage (replaces S3) + optional encryption
   runner/         → SQLite job queue + subprocess manager (replaces ClearML)
 desktop/
@@ -118,6 +120,21 @@ The ML code in `backend/ml/` is a fork of CLASSify-2's
 `backend/ml_classifier_trainer/`. The modeling math and defaults should NOT
 be changed — only the I/O layer (S3 → local storage, ClearML → local runner).
 When porting functions, preserve the exact algorithm logic.
+
+The forecasting engine in `backend/ml/forecast/` is a port of the Forecaster
+web app (`Forecaster_backend/backend/python/main.py` +
+`generate_new_forecasts.py`, Darts-based). Same rule: modeling math and
+defaults preserved exactly; S3 → LocalStorage, HTTP status pings → progress
+callbacks. Forecasting is a torch-gated add-on (`forecast` manifest): all
+Darts models need the add-on, TFT/NLinear/probabilistic-torch additionally
+need torch. Datasets get a `mode` column (`classification` / `forecasting`);
+the mode is chosen on the Prepare page and drives Home badges, results
+rendering, and job dispatch (`mode: "forecasting" | "forecast-generation"` in
+job args). Forecast results contract: flattened `{id}/results` CSV (rows =
+model × grouping × component; empty cell = "averaged across all"), nested
+`{id}/results.json`, per-model `{id}/forecast_data_<model>` chart JSON
+(train/val/pred series), `{id}/forecasts` for generated future forecasts,
+saved `{id}/<model>_model.joblib`.
 
 ## Frozen builds & add-ons (PyInstaller pitfalls — all hit in production)
 

@@ -13,6 +13,7 @@
   import { toasts, startJobMonitoring, triggerDatasetRefresh } from "$lib/stores/app";
   import ColumnPreviewModal from "$lib/components/ColumnPreviewModal.svelte";
   import ClassMappingModal from "$lib/components/ClassMappingModal.svelte";
+  import ForecastPrepare from "$lib/components/forecast/ForecastPrepare.svelte";
 
   let { params } = $props<{ params: { reportId?: string } }>();
   let reportId = $derived(params?.reportId ?? "");
@@ -23,6 +24,17 @@
   let supervised = $state(true);
   let training = $state(false);
   let prefilled = $state(false);
+  let pageMode = $state<"classification" | "forecasting">("classification");
+
+  function switchPageMode(mode: "classification" | "forecasting") {
+    if (mode === pageMode) return;
+    pageMode = mode;
+    toasts.info(
+      mode === "forecasting"
+        ? "Forecasting mode uses its own time-series column configuration."
+        : "Classification mode uses its own column configuration.",
+    );
+  }
 
   // Column preview
   let showColumnPreview = $state(false);
@@ -159,6 +171,11 @@
     loading = true;
     try {
       report = await datasetsApi.get(reportId);
+      if (report.mode === "forecasting") {
+        pageMode = "forecasting";
+      } else if (report.mode === "classification") {
+        pageMode = "classification";
+      }
 
       // Load previous training parameters (for rerun)
       let prevArgs: Record<string, any> | null = null;
@@ -390,352 +407,374 @@
         </span>
       {/if}
     </h1>
-    <a href="#/" class="btn btn-outline-secondary btn-sm">Back</a>
-  </div>
-
-  <!-- Step 1: Data & target -->
-  <div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <h5 class="mb-0">
-        <span class="step-num">1</span> Data &amp; Target
-      </h5>
-      <button class="btn btn-outline-primary btn-sm" onclick={() => (showColumnPreview = true)}>
-        Configure Columns
-      </button>
-    </div>
-    <div class="card-body">
-      {#if selectedCols.length > 0}
-        <div class="row g-3">
-          <div class="col-md-7">
-            <div class="small text-muted mb-1">Feature columns</div>
-            <p class="mb-2">
-              <strong>{featureCount}</strong> features selected
-              {#if featureSummary}
-                <span class="text-muted">({featureSummary})</span>
-              {/if}
-            </p>
-            <details>
-              <summary class="small text-muted" style="cursor: pointer;">
-                Show column list
-              </summary>
-              <div class="d-flex flex-wrap gap-1 mt-2">
-                {#each selectedCols.filter((c) => !c.is_class) as col (col.column)}
-                  <span class="badge text-bg-light border">
-                    {col.column}
-                    <span class="opacity-75 fw-normal">{col.data_type}</span>
-                  </span>
-                {/each}
-              </div>
-            </details>
-          </div>
-          <div class="col-md-5 border-md-start ps-md-4">
-            {#if supervised}
-              <label class="small text-muted mb-1" for="target-select">Prediction target</label>
-              <select
-                id="target-select"
-                class="form-select"
-                value={classColumn}
-                onchange={handleTargetChange}
-                disabled={savingTarget}
-              >
-                {#each selectedCols as col (col.column)}
-                  <option value={col.column} selected={col.column === classColumn}>
-                    {col.column} ({col.data_type})
-                  </option>
-                {/each}
-              </select>
-              <div class="form-text mb-0">
-                The column the models will predict. Change it here or via Configure Columns.
-              </div>
-            {:else}
-              <span class="small text-muted mb-1 d-block">Prediction target</span>
-              <p class="mb-0 text-muted">
-                None — unsupervised mode finds clusters instead of predicting a target column.
-              </p>
-            {/if}
-          </div>
-        </div>
-      {:else}
-        <p class="text-muted mb-0">
-          Choose which columns to include
-          {#if supervised}and which one is the prediction target{:else}
-            — no prediction target is needed for unsupervised training{/if}. Click "Configure
-          Columns" to begin.
-        </p>
-      {/if}
-    </div>
-  </div>
-
-  <!-- Step 2: Mode & models -->
-  <div class="card mb-3">
-    <div class="card-header">
-      <h5 class="mb-0"><span class="step-num">2</span> Learning Mode &amp; Models</h5>
-    </div>
-    <div class="card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-        <div class="btn-group" role="group" aria-label="Learning mode">
-          <button
-            type="button"
-            class="btn {supervised ? 'btn-primary' : 'btn-outline-primary'}"
-            onclick={() => setMode(true)}
-          >
-            Supervised
-            <span class="d-block small opacity-75">predict a target column</span>
-          </button>
-          <button
-            type="button"
-            class="btn {supervised ? 'btn-outline-primary' : 'btn-primary'}"
-            onclick={() => setMode(false)}
-          >
-            Unsupervised
-            <span class="d-block small opacity-75">find clusters</span>
-          </button>
-        </div>
-        <div class="btn-group btn-group-sm" role="group" aria-label="Model selection helpers">
-          <button type="button" class="btn btn-outline-secondary" onclick={selectAllModels}>
-            Select all
-          </button>
-          <button type="button" class="btn btn-outline-secondary" onclick={clearModels}>
-            Clear
-          </button>
-        </div>
+    <div class="d-flex align-items-center gap-2">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Modeling mode">
+        <button
+          type="button"
+          class="btn {pageMode === 'classification' ? 'btn-dark' : 'btn-outline-dark'}"
+          onclick={() => switchPageMode("classification")}
+        >
+          Classification
+        </button>
+        <button
+          type="button"
+          class="btn {pageMode === 'forecasting' ? 'btn-dark' : 'btn-outline-dark'}"
+          onclick={() => switchPageMode("forecasting")}
+        >
+          Forecasting
+        </button>
       </div>
+      <a href="#/" class="btn btn-outline-secondary btn-sm">Back</a>
+    </div>
+  </div>
 
-      <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2">
-        {#each activeModels as model (model)}
-          {@const available = modelAvailable(model)}
-          <div class="col">
-            <label
-              class="model-card h-100 {trainGroup.includes(model)
-                ? 'model-card-active'
-                : ''} {available ? '' : 'model-card-disabled'}"
-              for={`model-${model}`}
-            >
-              <input
-                type="checkbox"
-                class="form-check-input"
-                id={`model-${model}`}
-                checked={trainGroup.includes(model)}
-                disabled={!available}
-                onchange={() => toggleModel(model)}
-              />
-              <span class="form-check-label d-inline">
-                {MODEL_LABELS[model]}
-                {#if !available}
-                  <span class="d-block small text-muted">add-on not installed</span>
+  {#if pageMode === "forecasting"}
+    <ForecastPrepare {report} onModeSwitched={triggerDatasetRefresh} />
+  {:else}
+    <!-- Step 1: Data & target -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+          <span class="step-num">1</span> Data &amp; Target
+        </h5>
+        <button class="btn btn-outline-primary btn-sm" onclick={() => (showColumnPreview = true)}>
+          Configure Columns
+        </button>
+      </div>
+      <div class="card-body">
+        {#if selectedCols.length > 0}
+          <div class="row g-3">
+            <div class="col-md-7">
+              <div class="small text-muted mb-1">Feature columns</div>
+              <p class="mb-2">
+                <strong>{featureCount}</strong> features selected
+                {#if featureSummary}
+                  <span class="text-muted">({featureSummary})</span>
                 {/if}
-              </span>
-            </label>
+              </p>
+              <details>
+                <summary class="small text-muted" style="cursor: pointer;">
+                  Show column list
+                </summary>
+                <div class="d-flex flex-wrap gap-1 mt-2">
+                  {#each selectedCols.filter((c) => !c.is_class) as col (col.column)}
+                    <span class="badge text-bg-light border">
+                      {col.column}
+                      <span class="opacity-75 fw-normal">{col.data_type}</span>
+                    </span>
+                  {/each}
+                </div>
+              </details>
+            </div>
+            <div class="col-md-5 border-md-start ps-md-4">
+              {#if supervised}
+                <label class="small text-muted mb-1" for="target-select">Prediction target</label>
+                <select
+                  id="target-select"
+                  class="form-select"
+                  value={classColumn}
+                  onchange={handleTargetChange}
+                  disabled={savingTarget}
+                >
+                  {#each selectedCols as col (col.column)}
+                    <option value={col.column} selected={col.column === classColumn}>
+                      {col.column} ({col.data_type})
+                    </option>
+                  {/each}
+                </select>
+                <div class="form-text mb-0">
+                  The column the models will predict. Change it here or via Configure Columns.
+                </div>
+              {:else}
+                <span class="small text-muted mb-1 d-block">Prediction target</span>
+                <p class="mb-0 text-muted">
+                  None — unsupervised mode finds clusters instead of predicting a target column.
+                </p>
+              {/if}
+            </div>
           </div>
-        {/each}
+        {:else}
+          <p class="text-muted mb-0">
+            Choose which columns to include
+            {#if supervised}and which one is the prediction target{:else}
+              — no prediction target is needed for unsupervised training{/if}. Click "Configure
+            Columns" to begin.
+          </p>
+        {/if}
       </div>
-
-      {#if !supervised}
-        <div class="mt-3 d-flex align-items-center gap-2">
-          <label class="form-label mb-0" for="num-clusters">Number of clusters</label>
-          <input
-            type="number"
-            class="form-control"
-            id="num-clusters"
-            style="max-width: 120px;"
-            bind:value={numClusters}
-            min="2"
-          />
-          <span class="text-muted small">used when parameter tuning is off</span>
-        </div>
-      {/if}
     </div>
-  </div>
 
-  <!-- Step 3: Options -->
-  <div class="card mb-3">
-    <div class="card-header">
-      <h5 class="mb-0"><span class="step-num">3</span> Options</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="form-check form-switch">
-            <input
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
-              id="parameter-tune"
-              bind:checked={parameterTune}
-            />
-            <label class="form-check-label" for="parameter-tune">
-              Parameter tuning
-              <span class="d-block small text-muted">
-                {supervised
-                  ? "Optuna hyperparameter search — slower"
-                  : "Optuna hyperparameter search — slower; off = use cluster count below"}
-              </span>
-            </label>
+    <!-- Step 2: Mode & models -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <h5 class="mb-0"><span class="step-num">2</span> Learning Mode &amp; Models</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+          <div class="btn-group" role="group" aria-label="Learning mode">
+            <button
+              type="button"
+              class="btn {supervised ? 'btn-primary' : 'btn-outline-primary'}"
+              onclick={() => setMode(true)}
+            >
+              Supervised
+              <span class="d-block small opacity-75">predict a target column</span>
+            </button>
+            <button
+              type="button"
+              class="btn {supervised ? 'btn-outline-primary' : 'btn-primary'}"
+              onclick={() => setMode(false)}
+            >
+              Unsupervised
+              <span class="d-block small opacity-75">find clusters</span>
+            </button>
+          </div>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Model selection helpers">
+            <button type="button" class="btn btn-outline-secondary" onclick={selectAllModels}>
+              Select all
+            </button>
+            <button type="button" class="btn btn-outline-secondary" onclick={clearModels}>
+              Clear
+            </button>
           </div>
         </div>
-        {#if parameterTune}
-          <div class="col-md-6 d-flex align-items-center">
-            <label class="form-label mb-0 me-2" for="n-iter">Tuning iterations</label>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2">
+          {#each activeModels as model (model)}
+            {@const available = modelAvailable(model)}
+            <div class="col">
+              <label
+                class="model-card h-100 {trainGroup.includes(model)
+                  ? 'model-card-active'
+                  : ''} {available ? '' : 'model-card-disabled'}"
+                for={`model-${model}`}
+              >
+                <input
+                  type="checkbox"
+                  class="form-check-input"
+                  id={`model-${model}`}
+                  checked={trainGroup.includes(model)}
+                  disabled={!available}
+                  onchange={() => toggleModel(model)}
+                />
+                <span class="form-check-label d-inline">
+                  {MODEL_LABELS[model]}
+                  {#if !available}
+                    <span class="d-block small text-muted">add-on not installed</span>
+                  {/if}
+                </span>
+              </label>
+            </div>
+          {/each}
+        </div>
+
+        {#if !supervised}
+          <div class="mt-3 d-flex align-items-center gap-2">
+            <label class="form-label mb-0" for="num-clusters">Number of clusters</label>
             <input
               type="number"
               class="form-control"
-              id="n-iter"
+              id="num-clusters"
               style="max-width: 120px;"
-              min="1"
-              max="1000"
-              bind:value={nIter}
+              bind:value={numClusters}
+              min="2"
             />
+            <span class="text-muted small">used when parameter tuning is off</span>
           </div>
         {/if}
-        {#if supervised}
+      </div>
+    </div>
+
+    <!-- Step 3: Options -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <h5 class="mb-0"><span class="step-num">3</span> Options</h5>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
           <div class="col-md-6">
             <div class="form-check form-switch">
               <input
                 type="checkbox"
                 class="form-check-input"
                 role="switch"
-                id="shap"
-                bind:checked={shapFeatureExplainability}
+                id="parameter-tune"
+                bind:checked={parameterTune}
               />
-              <label class="form-check-label" for="shap">
-                SHAP feature explainability
-                <span class="d-block small text-muted">per-prediction insights</span>
+              <label class="form-check-label" for="parameter-tune">
+                Parameter tuning
+                <span class="d-block small text-muted">
+                  {supervised
+                    ? "Optuna hyperparameter search — slower"
+                    : "Optuna hyperparameter search — slower; off = use cluster count below"}
+                </span>
               </label>
             </div>
           </div>
-        {/if}
-        <div class="col-md-6">
-          <div class="form-check form-switch">
-            <input
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
-              id="visualize"
-              bind:checked={visualize}
-            />
-            <label class="form-check-label" for="visualize">
-              Generate visualizations
-              <span class="d-block small text-muted">charts on the results page</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <details class="mt-3">
-        <summary class="text-muted" style="cursor: pointer;">Advanced settings</summary>
-        <div class="row g-3 mt-1">
-          <div class="col-md-3">
+          {#if parameterTune}
+            <div class="col-md-6 d-flex align-items-center">
+              <label class="form-label mb-0 me-2" for="n-iter">Tuning iterations</label>
+              <input
+                type="number"
+                class="form-control"
+                id="n-iter"
+                style="max-width: 120px;"
+                min="1"
+                max="1000"
+                bind:value={nIter}
+              />
+            </div>
+          {/if}
+          {#if supervised}
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input
+                  type="checkbox"
+                  class="form-check-input"
+                  role="switch"
+                  id="shap"
+                  bind:checked={shapFeatureExplainability}
+                />
+                <label class="form-check-label" for="shap">
+                  SHAP feature explainability
+                  <span class="d-block small text-muted">per-prediction insights</span>
+                </label>
+              </div>
+            </div>
+          {/if}
+          <div class="col-md-6">
             <div class="form-check form-switch">
               <input
                 type="checkbox"
                 class="form-check-input"
                 role="switch"
-                id="standard-scaler"
-                bind:checked={standardScaler}
+                id="visualize"
+                bind:checked={visualize}
               />
-              <label class="form-check-label" for="standard-scaler">Standard scaler</label>
-              <span class="d-block small text-muted">instead of MinMax</span>
+              <label class="form-check-label" for="visualize">
+                Generate visualizations
+                <span class="d-block small text-muted">charts on the results page</span>
+              </label>
             </div>
-          </div>
-          {#if supervised}
-            <div class="col-md-3">
-              <label class="form-label" for="test-size">Test size</label>
-              <input
-                type="number"
-                class="form-control form-control-sm"
-                id="test-size"
-                step="0.05"
-                min="0.1"
-                max="0.5"
-                bind:value={testSize}
-              />
-            </div>
-            <div class="col-md-3">
-              <label class="form-label" for="folds">CV folds</label>
-              <input
-                type="number"
-                class="form-control form-control-sm"
-                id="folds"
-                min="2"
-                max="20"
-                bind:value={folds}
-              />
-            </div>
-            <div class="col-md-3">
-              <label class="form-label" for="repeats">CV repeats</label>
-              <input
-                type="number"
-                class="form-control form-control-sm"
-                id="repeats"
-                min="1"
-                max="10"
-                bind:value={repeats}
-              />
-            </div>
-          {/if}
-          <div class="col-md-3">
-            <label class="form-label" for="random-state">Random state</label>
-            <input
-              type="number"
-              class="form-control form-control-sm"
-              id="random-state"
-              bind:value={randomState}
-            />
           </div>
         </div>
-      </details>
-    </div>
-  </div>
 
-  <!-- Sticky action bar -->
-  <div class="prepare-actionbar">
-    <div class="small">
-      {#if startDisabledReason}
-        <span class="text-warning-emphasis">{startDisabledReason}</span>
-      {:else if slowRun}
-        <span class="text-warning-emphasis">
-          {trainGroup.length} model{trainGroup.length > 1 ? "s" : ""}{parameterTune
-            ? " with tuning"
-            : ""} — this may take a while. You can cancel mid-training.
-        </span>
-      {:else}
-        <span class="text-muted">
-          Ready: {trainGroup.length} model{trainGroup.length > 1 ? "s" : ""} selected
-        </span>
-      {/if}
+        <details class="mt-3">
+          <summary class="text-muted" style="cursor: pointer;">Advanced settings</summary>
+          <div class="row g-3 mt-1">
+            <div class="col-md-3">
+              <div class="form-check form-switch">
+                <input
+                  type="checkbox"
+                  class="form-check-input"
+                  role="switch"
+                  id="standard-scaler"
+                  bind:checked={standardScaler}
+                />
+                <label class="form-check-label" for="standard-scaler">Standard scaler</label>
+                <span class="d-block small text-muted">instead of MinMax</span>
+              </div>
+            </div>
+            {#if supervised}
+              <div class="col-md-3">
+                <label class="form-label" for="test-size">Test size</label>
+                <input
+                  type="number"
+                  class="form-control form-control-sm"
+                  id="test-size"
+                  step="0.05"
+                  min="0.1"
+                  max="0.5"
+                  bind:value={testSize}
+                />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="folds">CV folds</label>
+                <input
+                  type="number"
+                  class="form-control form-control-sm"
+                  id="folds"
+                  min="2"
+                  max="20"
+                  bind:value={folds}
+                />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="repeats">CV repeats</label>
+                <input
+                  type="number"
+                  class="form-control form-control-sm"
+                  id="repeats"
+                  min="1"
+                  max="10"
+                  bind:value={repeats}
+                />
+              </div>
+            {/if}
+            <div class="col-md-3">
+              <label class="form-label" for="random-state">Random state</label>
+              <input
+                type="number"
+                class="form-control form-control-sm"
+                id="random-state"
+                bind:value={randomState}
+              />
+            </div>
+          </div>
+        </details>
+      </div>
     </div>
-    <div class="d-flex gap-2">
-      <a href="#/" class="btn btn-secondary">Cancel</a>
-      <button
-        class="btn btn-primary"
-        disabled={training || startDisabledReason !== ""}
-        onclick={startTraining}
-      >
-        {#if training}
-          <span class="spinner-border spinner-border-sm me-1"></span>
-          Starting...
+
+    <!-- Sticky action bar -->
+    <div class="prepare-actionbar">
+      <div class="small">
+        {#if startDisabledReason}
+          <span class="text-warning-emphasis">{startDisabledReason}</span>
+        {:else if slowRun}
+          <span class="text-warning-emphasis">
+            {trainGroup.length} model{trainGroup.length > 1 ? "s" : ""}{parameterTune
+              ? " with tuning"
+              : ""} — this may take a while. You can cancel mid-training.
+          </span>
         {:else}
-          Start Training
+          <span class="text-muted">
+            Ready: {trainGroup.length} model{trainGroup.length > 1 ? "s" : ""} selected
+          </span>
         {/if}
-      </button>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="#/" class="btn btn-secondary">Cancel</a>
+        <button
+          class="btn btn-primary"
+          disabled={training || startDisabledReason !== ""}
+          onclick={startTraining}
+        >
+          {#if training}
+            <span class="spinner-border spinner-border-sm me-1"></span>
+            Starting...
+          {:else}
+            Start Training
+          {/if}
+        </button>
+      </div>
     </div>
-  </div>
 
-  {#if showColumnPreview}
-    <ColumnPreviewModal
-      {reportId}
-      onclose={() => (showColumnPreview = false)}
-      oncomplete={handleColumnChangesComplete}
-    />
-  {/if}
+    {#if showColumnPreview}
+      <ColumnPreviewModal
+        {reportId}
+        onclose={() => (showColumnPreview = false)}
+        oncomplete={handleColumnChangesComplete}
+      />
+    {/if}
 
-  {#if showClassMapping}
-    <ClassMappingModal
-      {reportId}
-      {classColumn}
-      {classValues}
-      onclose={() => (showClassMapping = false)}
-      oncomplete={handleClassMappingComplete}
-    />
+    {#if showClassMapping}
+      <ClassMappingModal
+        {reportId}
+        {classColumn}
+        {classValues}
+        onclose={() => (showClassMapping = false)}
+        oncomplete={handleClassMappingComplete}
+      />
+    {/if}
   {/if}
 {/if}

@@ -24,6 +24,38 @@ class ColumnChangesRequest(BaseModel):
     data_types: list[ColumnChangeRequest] = Field(default_factory=list)
 
 
+TS_ROLES = [
+    "time-component",
+    "grouping",
+    "target",
+    "past-covariate",
+    "future-covariate",
+    "static-covariate",
+    "not-included",
+]
+
+
+class TsRoleRequest(BaseModel):
+    """A single column's time-series role assignment."""
+
+    column: str
+    role: str
+
+
+class TsRolesRequest(BaseModel):
+    """POST /api/datasets/{id}/ts-roles — save forecasting column roles."""
+
+    roles: list[TsRoleRequest] = Field(default_factory=list)
+
+
+class TsRolesResponse(BaseModel):
+    """Response for the ts-roles endpoint."""
+
+    success: bool
+    message: str = ""
+    roles: list[TsRoleRequest] = Field(default_factory=list)
+
+
 class ClassMappingRequest(BaseModel):
     """POST /api/datasets/{id}/class-mapping."""
 

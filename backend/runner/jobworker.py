@@ -26,11 +26,14 @@ if backend_dir not in sys.path:
 from classify_api import repositories as repo  # noqa: E402
 from classify_api.db import get_session_factory, run_migrations  # noqa: E402
 from classify_api.settings import get_settings  # noqa: E402
-from ml.args import TrainingArgs  # noqa: E402
+from ml.args import ForecastArgs, TrainingArgs  # noqa: E402
 from ml.column_types import read_csv_from_storage  # noqa: E402
 from runner.cancellation import CancelToken, clear_cancel_flag  # noqa: E402
 from runner.progress import write_models, write_progress  # noqa: E402
 from storage.factory import get_storage  # noqa: E402
+
+FORECASTING_MODE = "forecasting"
+FORECAST_GENERATION_MODE = "forecast-generation"
 
 _RUN_ARTIFACT_SUFFIXES = [
     "results",
@@ -41,6 +44,8 @@ _RUN_ARTIFACT_SUFFIXES = [
     "scaler.joblib",
     "labeled",
     "logisticregression_odds_ratio",
+    "forecasts",
+    "forecast_generation_log",
 ]
 
 
@@ -56,6 +61,7 @@ def _archive_run(storage: Any, report_id: str, prev_job_id: str) -> None:
             suffix in _RUN_ARTIFACT_SUFFIXES
             or suffix.endswith("_model.joblib")
             or suffix.startswith("shap_rows_")
+            or suffix.startswith("forecast_data_")
             or suffix.startswith("viz/")
         )
         if is_run_artifact:
@@ -78,6 +84,7 @@ def _clear_run_artifacts(storage: Any, report_id: str) -> None:
             suffix in _RUN_ARTIFACT_SUFFIXES
             or suffix.endswith("_model.joblib")
             or suffix.startswith("shap_rows_")
+            or suffix.startswith("forecast_data_")
             or suffix.startswith("viz/")
         )
         if is_run_artifact:
@@ -105,7 +112,13 @@ def run_job(job_id: str) -> int:
 
         report_id = job.report_uuid
         args_dict = job.args or {}
-        args = TrainingArgs.from_dict(args_dict)
+        job_mode = args_dict.get("mode", "")
+        if job_mode == FORECASTING_MODE:
+            args: Any = ForecastArgs.from_dict(args_dict)
+        elif job_mode == FORECAST_GENERATION_MODE:
+            args = ForecastArgs.from_dict(args_dict)
+        else:
+            args = TrainingArgs.from_dict(args_dict)
         args.report_uuid = report_id
         if not args.n_jobs:
             args.n_jobs = os.cpu_count() or 1
@@ -124,10 +137,21 @@ def run_job(job_id: str) -> int:
         # Archive previous run's artifacts (preserves run history — including
         # failed/cancelled runs' logs, which is the only way to inspect why
         # they failed), then clear them so the new run starts clean.
-        prev_job = repo.get_previous_job_by_report(db, report_id, job_id)
-        if prev_job:
-            _archive_run(storage, report_id, prev_job.id)
-        _clear_run_artifacts(storage, report_id)
+        # Forecast-generation jobs are additive to the current run (they only
+        # write forecasts + a generation log) — archiving here would hide the
+        # metrics/charts the forecasts belong to.
+        if job_mode != FORECAST_GENERATION_MODE:
+            prev_job = repo.get_previous_job_by_report(db, report_id, job_id)
+            # Additive forecast-generation jobs never own artifacts — walk back
+            # to the training run the current artifacts belong to.
+            while (
+                prev_job is not None
+                and (prev_job.args or {}).get("mode") == FORECAST_GENERATION_MODE
+            ):
+                prev_job = repo.get_previous_job_by_report(db, report_id, prev_job.id)
+            if prev_job:
+                _archive_run(storage, report_id, prev_job.id)
+            _clear_run_artifacts(storage, report_id)
 
         # Start the output log immediately after the clear so ANY later
         # failure (dataset read errors, addon init, training) is visible in
@@ -135,19 +159,24 @@ def run_job(job_id: str) -> int:
         log_lines: list[str] = [f"Job {job_id} started."]
         storage.put_text(f"{report_id}/output_log", "\n".join(log_lines) + "\n")
 
-        # Read the processed dataset
-        try:
-            df = read_csv_from_storage(storage, f"{report_id}/file", index_col="index")
-        except Exception:
-            df = read_csv_from_storage(storage, f"{report_id}/file")
-
-        # Read separate testset if present
+        # Read the processed dataset (classification/unsupervised only — the
+        # forecasting engine reads and parses its own data from storage)
+        df = None
         testset = None
-        if storage.exists(f"{report_id}/testset"):
+        if job_mode not in (FORECASTING_MODE, FORECAST_GENERATION_MODE):
             try:
-                testset = read_csv_from_storage(storage, f"{report_id}/testset", index_col="index")
+                df = read_csv_from_storage(storage, f"{report_id}/file", index_col="index")
             except Exception:
-                testset = read_csv_from_storage(storage, f"{report_id}/testset")
+                df = read_csv_from_storage(storage, f"{report_id}/file")
+
+            # Read separate testset if present
+            if storage.exists(f"{report_id}/testset"):
+                try:
+                    testset = read_csv_from_storage(
+                        storage, f"{report_id}/testset", index_col="index"
+                    )
+                except Exception:
+                    testset = read_csv_from_storage(storage, f"{report_id}/testset")
 
         # Create cancel token
         cancel_token = CancelToken(storage, report_id)
@@ -189,6 +218,13 @@ def run_job(job_id: str) -> int:
                     model_states[current_model]["state"] = "running"
                     _persist_models()
                 return
+            m = re.match(r"^Forecasting model:\s*(\S+)", msg.strip())
+            if m:
+                current_model = m.group(1)
+                if current_model in model_states:
+                    model_states[current_model]["state"] = "running"
+                    _persist_models()
+                return
             m = re.match(r"^Best params:.*\bscore:\s*(-?[\d.]+)", msg.strip())
             if m and current_model and current_model in model_states:
                 model_states[current_model]["state"] = "done"
@@ -197,6 +233,11 @@ def run_job(job_id: str) -> int:
                 _persist_models()
                 return
             m = re.match(r"^(\S+) training complete\.$", msg.strip())
+            if m and m.group(1) in model_states:
+                model_states[m.group(1)]["state"] = "done"
+                _persist_models()
+                return
+            m = re.match(r"^(\S+) forecast complete\.$", msg.strip())
             if m and m.group(1) in model_states:
                 model_states[m.group(1)]["state"] = "done"
                 _persist_models()
@@ -210,7 +251,8 @@ def run_job(job_id: str) -> int:
                     _persist_models()
                 return
             m = re.match(
-                r"^Error in (?:training|clustering|train/evaluation of)\s+(\S+)", msg.strip()
+                r"^Error in (?:training|clustering|train/evaluation of|forecasting)\s+(\S+)",
+                msg.strip(),
             )
             if m:
                 name = m.group(1).rstrip(":,;")
@@ -239,8 +281,25 @@ def run_job(job_id: str) -> int:
         if was_frozen:
             sys.__dict__["frozen"] = False
 
-        # Run the trainer
-        from ml.engine import trainer
+        # Run the trainer (or the forecast-generation flow)
+
+        def _invoke() -> None:
+            if job_mode == FORECAST_GENERATION_MODE:
+                from ml.forecast.generate import run_forecast_generation
+
+                run_forecast_generation(args, storage, on_progress, on_log, cancel_token)
+                return
+            from ml.engine import trainer
+
+            trainer(
+                args=args,
+                storage=storage,
+                full_dataset=df,
+                testset=testset,
+                on_progress=on_progress,
+                log_cb=on_log,
+                cancel_token=cancel_token,
+            )
 
         # Process-based joblib backends (loky) deadlock inside frozen apps —
         # spawn attempts relaunch the bundled exe instead of a worker. Force
@@ -252,25 +311,9 @@ def run_job(job_id: str) -> int:
             from joblib import parallel_backend
 
             with parallel_backend("threading"):
-                trainer(
-                    args=args,
-                    storage=storage,
-                    full_dataset=df,
-                    testset=testset,
-                    on_progress=on_progress,
-                    log_cb=on_log,
-                    cancel_token=cancel_token,
-                )
+                _invoke()
         else:
-            trainer(
-                args=args,
-                storage=storage,
-                full_dataset=df,
-                testset=testset,
-                on_progress=on_progress,
-                log_cb=on_log,
-                cancel_token=cancel_token,
-            )
+            _invoke()
 
         # Check if cancelled
         if cancel_token.is_set():

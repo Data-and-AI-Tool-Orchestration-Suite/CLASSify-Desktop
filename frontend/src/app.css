@@ -249,3 +249,61 @@ pre {
   width: auto;
   border-radius: 4px;
 }
+
+/* ── Forecasting mode (ported from the Forecaster web app) ── */
+
+/* Pill radio buttons for time-series column role assignment */
+.radio-bubble-label {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 50rem;
+  background-color: #fff;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8rem;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.radio-bubble-label:hover {
+  border-color: var(--button-primary);
+}
+
+.radio-bubble-active {
+  background-color: var(--button-primary);
+  border-color: var(--button-primary);
+  color: #fff;
+}
+
+.ts-role-table th {
+  font-size: 0.78rem;
+  vertical-align: top;
+}
+
+.table-scroll-container {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.forecast-metrics-table {
+  font-size: 0.9rem;
+}
+
+.forecast-metrics-table th[title] {
+  cursor: help;
+}
+
+.log-output {
+  background-color: var(--bg-faded);
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

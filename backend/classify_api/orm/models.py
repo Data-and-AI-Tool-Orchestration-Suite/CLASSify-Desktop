@@ -24,7 +24,12 @@ class Base(DeclarativeBase):
 
 
 class Report(Base):
-    """A uploaded dataset and its processing state."""
+    """A uploaded dataset and its processing state.
+
+    ``mode`` is ``classification`` or ``forecasting`` once the dataset has
+    been configured (column changes / time-series roles); NULL for fresh
+    uploads.
+    """
 
     __tablename__ = "reports"
 
@@ -32,6 +37,7 @@ class Report(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="Preview")
+    mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("jobs.id"), nullable=True)
     column_changes: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -78,6 +78,15 @@ BUILTIN_ADDONS: dict[str, AddonManifest] = {
         min_app_version="1.0.0",
         provides=["sdv", "torch"],
     ),
+    "forecast": AddonManifest(
+        name="forecast",
+        version="1.0.0",
+        description="Forecasting engine (Darts) — time-series models: ARIMA, Exponential Smoothing, Linear Regression, Random Forest, XGBoost, LightGBM, N-Linear, and Temporal Fusion Transformer. Enables the Forecasting mode on the Prepare page. Requires torch (~2.5GB download, shared between add-ons and downloaded once).",
+        pip_deps=["darts[torch]>=0.36", "lightgbm>=4.0", "xgboost>=2.0"],
+        size_estimate_mb=2600,
+        min_app_version="1.3.0",
+        provides=["darts", "torch"],
+    ),
 }
 
 

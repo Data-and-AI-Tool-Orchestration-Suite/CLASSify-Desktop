@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json
 from typing import Any
 
+import pandas as pd
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,9 @@ from classify_api import repositories as repo
 from classify_api.db import get_session
 from classify_api.schemas.jobs import JobListResponse, JobResponse, TrainRequest
 from classify_api.settings import Settings, get_settings
-from ml.options import get_options
+from ml.backends import is_available
+from ml.column_types import detect_encoding
+from ml.options import get_forecasting_options, get_options
 from runner.cancellation import clear_cancel_flag, set_cancel_flag
 from runner.manager import get_manager
 from runner.progress import append_log
@@ -25,6 +29,8 @@ from storage.factory import get_storage
 
 router = APIRouter()
 log = structlog.get_logger()
+
+FORECAST_GENERATION_MODE = "forecast-generation"
 
 
 def _serialize_job(job: Any) -> JobResponse:
@@ -48,40 +54,8 @@ def _serialize_job(job: Any) -> JobResponse:
 MAX_QUEUED_JOBS = 10
 
 
-@router.post("", response_model=JobResponse)
-def start_training(
-    request: TrainRequest,
-    db: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
-) -> JobResponse:
-    """Start a training job.  Parses options and enqueues."""
-    report = repo.get_report(db, request.report_id)
-    if report is None:
-        raise HTTPException(status_code=404, detail=f"Dataset {request.report_id} not found")
-
-    if report.status == "Processing":
-        raise HTTPException(status_code=409, detail="A job is already running for this dataset")
-
-    # One active (queued or running) job per dataset
-    active = repo.get_active_job_for_report(db, request.report_id)
-    if active is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="A job is already queued or running for this dataset "
-            f"(job {active.id[:8]}). Wait for it to finish.",
-        )
-
-    # Training runs sequentially on purpose (CPU-bound, limited compute on
-    # smaller machines) — new jobs wait in the FIFO queue for the current one.
-    queued = repo.count_queued_jobs(db)
-    if queued >= MAX_QUEUED_JOBS:
-        raise HTTPException(
-            status_code=409,
-            detail=f"The job queue is full ({queued} jobs waiting, limit {MAX_QUEUED_JOBS}). "
-            "Wait for one to finish before starting another.",
-        )
-
-    # Parse options into args dict
+def _parse_options(request: TrainRequest) -> dict[str, Any]:
+    """Parse the flat name/value option list into a typed args dict."""
     args: dict[str, Any] = {}
     for opt in request.options:
         name = opt.get("name", "")
@@ -120,6 +94,63 @@ def start_training(
                 else:
                     flattened.append(i)
             args["train_group"] = flattened
+    return args
+
+
+def _guard_queue_capacity(db: Session, report_id: str, report: Any) -> None:
+    if report.status == "Processing":
+        raise HTTPException(status_code=409, detail="A job is already running for this dataset")
+
+    active = repo.get_active_job_for_report(db, report_id)
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A job is already queued or running for this dataset "
+            f"(job {active.id[:8]}). Wait for it to finish.",
+        )
+
+    queued = repo.count_queued_jobs(db)
+    if queued >= MAX_QUEUED_JOBS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"The job queue is full ({queued} jobs waiting, limit {MAX_QUEUED_JOBS}). "
+            "Wait for one to finish before starting another.",
+        )
+
+
+def _enqueue_job(db: Session, report_id: str, args: dict[str, Any], report: Any) -> JobResponse:
+    args["report_uuid"] = report_id
+    args["prev_report_status"] = report.status
+
+    job = enqueue(db, report_id, args)
+    repo.update_report_job_id(db, report_id, job.id)
+    repo.update_report_status(db, report_id, "Queued")
+    db.commit()
+
+    clear_cancel_flag(get_storage(), report_id)
+    return _serialize_job(job)
+
+
+@router.post("", response_model=JobResponse)
+def start_training(
+    request: TrainRequest,
+    db: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> JobResponse:
+    """Start a training job.  Parses options and enqueues."""
+    report = repo.get_report(db, request.report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Dataset {request.report_id} not found")
+
+    _guard_queue_capacity(db, request.report_id, report)
+
+    args = _parse_options(request)
+
+    if request.mode == "forecasting":
+        return _start_forecasting_job(db, request, report, args, settings)
+
+    # Training runs sequentially on purpose (CPU-bound, limited compute on
+    # smaller machines) — new jobs wait in the FIFO queue for the current one.
 
     # Supervised training needs a target column; unsupervised does not.
     supervised = args.get("supervised", True)
@@ -138,30 +169,139 @@ def start_training(
         args.pop("class_column", None)
 
     # Set runner-populated fields
-    args["report_uuid"] = request.report_id
     args["disable_model_save"] = False
     args["n_jobs"] = settings.n_jobs
     args["max_features"] = ["sqrt", "log2"]
     args["min_samples_split"] = [2, 5, 10]
     args["min_samples_leaf"] = [1, 2, 4]
     args["bootstrap"] = [True, False]
-    # Snapshot for restoring the status if the queued job is cancelled
-    args["prev_report_status"] = report.status
 
-    # Enqueue
-    job = enqueue(db, request.report_id, args)
-    repo.update_report_job_id(db, request.report_id, job.id)
-    # Surface the pending job in the dataset list; the manager flips this to
-    # "Processing" when the job actually starts running.
-    repo.update_report_status(db, request.report_id, "Queued")
-    db.commit()
+    return _enqueue_job(db, request.report_id, args, report)
 
-    # A new job must start with a clean slate: a cancel flag left over from a
-    # previous killed/failed run would cancel this one instantly. (The flag
-    # is per-report and only ever means "stop the currently running worker".)
-    clear_cancel_flag(get_storage(), request.report_id)
 
-    return _serialize_job(job)
+def _ts_role_args(report: Any) -> dict[str, Any]:
+    """Extract forecasting column roles from a report's saved ts_roles."""
+    roles: dict[str, Any] = {
+        "time_component": "",
+        "target": [],
+        "grouping": [],
+        "past_covariates": [],
+        "future_covariates": [],
+        "static_covariates": [],
+    }
+    column_changes = report.column_changes or {}
+    for role_entry in column_changes.get("ts_roles") or []:
+        column, role = role_entry.get("column", ""), role_entry.get("role", "")
+        if role == "time-component":
+            roles["time_component"] = column
+        elif role == "target":
+            roles["target"].append(column)
+        elif role == "grouping":
+            roles["grouping"].append(column)
+        elif role == "past-covariate":
+            roles["past_covariates"].append(column)
+        elif role == "future-covariate":
+            roles["future_covariates"].append(column)
+        elif role == "static-covariate":
+            roles["static_covariates"].append(column)
+    return roles
+
+
+def _start_forecasting_job(
+    db: Session,
+    request: TrainRequest,
+    report: Any,
+    args: dict[str, Any],
+    settings: Settings,
+) -> JobResponse:
+    """Build forecasting args from the dataset's saved time-series roles."""
+    if not is_available("darts"):
+        raise HTTPException(
+            status_code=400,
+            detail="The Forecasting add-on is not installed. "
+            "Install it via the Add-ons page to train forecasting models.",
+        )
+
+    ts_roles = (report.column_changes or {}).get("ts_roles") or []
+    if not ts_roles:
+        raise HTTPException(
+            status_code=400,
+            detail="This dataset has no time-series configuration. "
+            "Assign the time component, target and covariate columns first.",
+        )
+
+    args.update(_ts_role_args(report))
+
+    if not args["time_component"] or not args["target"]:
+        raise HTTPException(
+            status_code=400,
+            detail="A time component and at least one target column are required for forecasting",
+        )
+
+    if args.get("retrain"):
+        storage = get_storage()
+        if not storage.exists(f"{request.report_id}/retrain_file"):
+            raise HTTPException(
+                status_code=400,
+                detail="No new data file has been uploaded for retraining.",
+            )
+
+    args["mode"] = "forecasting"
+    args["n_jobs"] = settings.n_jobs
+    return _enqueue_job(db, request.report_id, args, report)
+
+
+@router.post("/forecast-generation", response_model=JobResponse)
+async def start_forecast_generation(
+    report_id: str = Form(...),
+    forecast_horizon: int = Form(12),
+    models: str = Form(""),
+    future_covariates: UploadFile | None = File(None),
+    db: Session = Depends(get_session),
+) -> JobResponse:
+    """Generate future forecasts with saved models from a completed run."""
+    report = repo.get_report(db, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Dataset {report_id} not found")
+
+    _guard_queue_capacity(db, report_id, report)
+
+    model_list = [m.strip() for m in models.split(",") if m.strip()]
+    if not model_list:
+        raise HTTPException(status_code=400, detail="Select at least one model to forecast with.")
+    if forecast_horizon < 1:
+        raise HTTPException(status_code=400, detail="Forecast horizon must be at least 1.")
+
+    if future_covariates is not None and future_covariates.filename:
+        if not future_covariates.filename.lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Future covariates file must be a CSV")
+        raw = await future_covariates.read()
+        encoding = detect_encoding(raw)
+        try:
+            text = raw.decode(encoding)
+            cov_df = pd.read_csv(io.StringIO(text))
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to parse future covariates CSV: {e}"
+            ) from e
+        csv_buf = io.StringIO()
+        cov_df.to_csv(csv_buf, index=False)
+        get_storage().put_text(f"{report_id}/future_covariates", csv_buf.getvalue())
+
+    args: dict[str, Any] = {
+        "mode": FORECAST_GENERATION_MODE,
+        "train_group": model_list,
+        "forecast_horizon": forecast_horizon,
+    }
+    args.update(_ts_role_args(report))
+    if not args["time_component"] or not args["target"]:
+        raise HTTPException(
+            status_code=400,
+            detail="This dataset has no time-series configuration — "
+            "train a forecasting model first.",
+        )
+
+    return _enqueue_job(db, report_id, args, report)
 
 
 @router.get("/active/{report_id}", response_model=JobResponse | None)
@@ -343,6 +483,12 @@ def ml_options_supervised() -> dict[str, Any]:
 def ml_options_unsupervised() -> dict[str, Any]:
     """Get unsupervised ML options for the Prepare page."""
     return get_options(supervised=False)
+
+
+@router.get("/ml-options/forecasting")
+def ml_options_forecasting() -> dict[str, Any]:
+    """Get forecasting options for the Prepare page."""
+    return get_forecasting_options()
 
 
 @router.post("/recover")

@@ -591,3 +591,135 @@ def get_options(supervised: bool = True) -> dict[str, Any]:
     if supervised:
         return get_supervised_options()
     return get_unsupervised_options()
+
+
+FORECASTING_MODELS = [
+    "linear-regression",
+    "random-forest",
+    "lgbm",
+    "xgboost",
+    "nlinear",
+    "tft",
+    "exponential-smoothing",
+    "arima",
+]
+
+
+def get_forecasting_options() -> dict[str, Any]:
+    """Return the forecasting options dict (mirrors the Forecaster form)."""
+    return {
+        "train_group": {
+            "type": "list",
+            "default": FORECASTING_MODELS,
+            "models": FORECASTING_MODELS,
+            "help": "Models to train",
+        },
+        "test_size": {
+            "type": "float",
+            "default": 0.2,
+            "models": FORECASTING_MODELS,
+            "help": "Input a decimal to indicate a proportion to leave out as a test set, or a whole number to indicate the number of timestamps.",
+        },
+        "expanding_window": {
+            "type": "bool",
+            "default": False,
+            "models": FORECASTING_MODELS,
+            "help": "Rather than evaluating on a single test set, models will be continually evaluated and re-trained over a growing subsection of data, producing predictions for almost all of the time series.",
+        },
+        "expanding_window_forecast_horizon": {
+            "type": "int",
+            "default": 6,
+            "models": FORECASTING_MODELS,
+            "help": "Number of timesteps the model will forecast for at each step of the expanding window.",
+        },
+        "expanding_window_stride": {
+            "type": "int",
+            "default": 6,
+            "models": FORECASTING_MODELS,
+            "help": "Number of timesteps to expand by at each step in the training/evaluation process.",
+        },
+        "visualize": {
+            "type": "bool",
+            "default": True,
+            "models": FORECASTING_MODELS,
+            "help": "Generate visualizations of forecasts and metrics.",
+        },
+        "generate_real_predictions": {
+            "type": "bool",
+            "default": False,
+            "models": FORECASTING_MODELS,
+            "help": "Train models on the entire dataset and create future predictions rather than holding out a test set for evaluation.",
+        },
+        "real_prediction_length": {
+            "type": "int",
+            "default": 12,
+            "models": FORECASTING_MODELS,
+            "help": "Number of timesteps to predict for.",
+        },
+        "fill_future_covariates": {
+            "type": "bool",
+            "default": True,
+            "models": FORECASTING_MODELS,
+            "help": "Impute your future covariates into the future to be used with prediction generation. Otherwise, future covariates will be used as past covariates at prediction time.",
+        },
+        "probabilistic": {
+            "type": "bool",
+            "default": False,
+            "models": FORECASTING_MODELS,
+            "help": "Models will produce many predictions using a distribution function for each timestamp and average together, rather than producing a single prediction.",
+        },
+        "probabilistic_likelihood": {
+            "type": "list",
+            "default": ["quantile", "gaussian", "laplace"],
+            "models": FORECASTING_MODELS,
+            "help": "Distribution function used for probabilistic forecasting. Gaussian is a good general purpose choice, Laplace is best for series with occasional extreme outliers, and Quantile is the most flexible.",
+        },
+        "probabilistic_num_samples": {
+            "type": "int",
+            "default": 100,
+            "models": FORECASTING_MODELS,
+            "help": "Number of predictions made for each timestamp with probabilistic forecasting.",
+        },
+        "arima_p": {
+            "type": "int",
+            "default": 12,
+            "models": ["arima"],
+            "help": "Number of previous timesteps to be used in the autoregressive model.",
+        },
+        "arima_d": {
+            "type": "int",
+            "default": 1,
+            "models": ["arima"],
+            "help": "Number of times the data has past values subtracted.",
+        },
+        "arima_q": {
+            "type": "int",
+            "default": 6,
+            "models": ["arima"],
+            "help": "Size of the moving average window for calculations.",
+        },
+        "lags": {
+            "type": "int",
+            "default": 12,
+            "models": ["linear-regression", "random-forest", "lgbm", "xgboost", "nlinear", "tft"],
+            "help": "Number of previous timesteps to use as model input at once.",
+        },
+        "lags_future": {
+            "type": "int",
+            "default": 0,
+            "models": ["linear-regression", "random-forest", "lgbm", "xgboost", "nlinear"],
+            "help": "Number of timesteps in the future to use future covariates (leave at 0 if prediction time and future covariate time should be equal).",
+        },
+        "output_chunk_length": {
+            "type": "int",
+            "default": 6,
+            "models": ["linear-regression", "random-forest", "lgbm", "xgboost", "nlinear", "tft"],
+            "help": "Number of timesteps predicted at once by the model.",
+        },
+        "epochs": {
+            "type": "int",
+            "default": 10,
+            "models": ["nlinear", "tft"],
+            "help": "Number of epochs to train model for (higher numbers will take longer).",
+        },
+    }

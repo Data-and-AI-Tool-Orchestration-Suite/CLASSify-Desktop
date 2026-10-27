@@ -18,6 +18,7 @@
     startJobMonitoring,
   } from "$lib/stores/app";
   import TrainingProgress from "$lib/components/TrainingProgress.svelte";
+  import ForecastResults from "$lib/components/forecast/ForecastResults.svelte";
 
   let { params } = $props<{ params: { reportId?: string } }>();
   let reportId = $derived(params?.reportId ?? "");
@@ -388,308 +389,316 @@
         <a href={`#/prepare/${reportId}`} class="alert-link">Edit settings and rerun</a>.
       </div>
     {/if}
-    <!-- Tabs — flex column fills the viewport so scrollable tabs
+    {#if report.mode === "forecasting"}
+      <ForecastResults {reportId} {jobActive} />
+    {:else}
+      <!-- Tabs — flex column fills the viewport so scrollable tabs
          (Prediction Insights, Output Log) reach the bottom of the page -->
-    <div class="d-flex flex-column" style="height: calc(100vh - 232px); min-height: 360px;">
-      <ul class="nav nav-tabs mb-3" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link {activeTab === 'table' ? 'active' : ''}"
-            onclick={() => (activeTab = "table")}
-          >
-            Results Table
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link {activeTab === 'viz' ? 'active' : ''}"
-            onclick={() => (activeTab = "viz")}
-          >
-            Visualizations
-            {#if vizList.length > 0}
-              <span class="badge bg-secondary ms-1">{vizList.length}</span>
-            {/if}
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link {activeTab === 'download' ? 'active' : ''}"
-            onclick={() => (activeTab = "download")}
-          >
-            Download Data
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link {activeTab === 'shap' ? 'active' : ''}"
-            onclick={() => (activeTab = "shap")}
-          >
-            Prediction Insights
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link {activeTab === 'log' ? 'active' : ''}"
-            onclick={() => (activeTab = "log")}
-          >
-            Output Log
-          </button>
-        </li>
-      </ul>
-
-      <!-- Results Table -->
-      {#if activeTab === "table"}
-        {#if resultsData.rows.length > 0}
-          <div class="table-responsive flex-grow-1" style="overflow: auto; min-height: 0;">
-            <table class="table table-sm table-striped table-hover align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th>Model</th>
-                  {#each primaryCols as col (col)}
-                    <th class="text-end" title={metricDefs[col] || ""}>{colLabel(col)}</th>
-                  {/each}
-                  <th class="text-end"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each resultsData.rows as row (row.model)}
-                  <tr>
-                    <td>
-                      <button
-                        type="button"
-                        class="btn btn-link btn-sm p-0 text-decoration-none fw-medium"
-                        onclick={() => toggleRow(row.model)}
-                        title="Show features and all metrics"
-                      >
-                        {row.model}
-                      </button>
-                      <span class="text-muted small ms-1">
-                        ({parseFeatures(row.features ?? "").length} features)
-                      </span>
-                    </td>
-                    {#each primaryCols as col (col)}
-                      <td class="text-end">{row[col] ?? "—"}</td>
-                    {/each}
-                    <td class="text-end">
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        onclick={() => toggleRow(row.model)}
-                        aria-expanded={expandedRows.has(row.model)}
-                        title={expandedRows.has(row.model) ? "Hide details" : "Show details"}
-                      >
-                        {expandedRows.has(row.model) ? "▲" : "▼"}
-                      </button>
-                    </td>
-                  </tr>
-                  {#if expandedRows.has(row.model)}
-                    <tr>
-                      <td colspan={primaryCols.length + 2} class="bg-body-tertiary">
-                        <div class="mb-3">
-                          <div class="small fw-medium mb-1">
-                            Features ({parseFeatures(row.features ?? "").length})
-                          </div>
-                          <div class="d-flex flex-wrap gap-1">
-                            {#each parseFeatures(row.features ?? "") as feat (feat)}
-                              <span class="badge text-bg-light border">{feat}</span>
-                            {/each}
-                          </div>
-                        </div>
-                        {#if extraCols.length > 0}
-                          <div class="small fw-medium mb-1">All metrics</div>
-                          <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2">
-                            {#each extraCols as col (col)}
-                              <div class="col">
-                                <div class="border rounded p-2 h-100 bg-body">
-                                  <div class="small text-muted" title={metricDefs[col] || ""}>
-                                    {col}
-                                  </div>
-                                  <div>{row[col] ?? "—"}</div>
-                                </div>
-                              </div>
-                            {/each}
-                          </div>
-                        {/if}
-                      </td>
-                    </tr>
-                  {/if}
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {:else}
-          <p class="text-muted">No results data available.</p>
-        {/if}
-      {/if}
-
-      <!-- Visualizations -->
-      {#if activeTab === "viz"}
-        {#if vizList.length > 0}
-          <div class="row g-3">
-            {#each vizList as viz}
-              <div class="col-md-6 col-lg-4">
-                <div class="card h-100">
-                  <button
-                    type="button"
-                    class="btn p-0 border-0"
-                    onclick={() => (lightboxViz = viz)}
-                    title="Click to enlarge"
-                  >
-                    <img
-                      src={vizImgUrl(viz)}
-                      class="card-img-top"
-                      alt={viz}
-                      loading="lazy"
-                      style="cursor: zoom-in;"
-                    />
-                  </button>
-                  <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                    <p class="card-text small text-muted mb-0 text-truncate">{viz}</p>
-                    <a
-                      href={vizDownloadUrl(viz)}
-                      class="btn btn-outline-secondary btn-sm ms-2 flex-shrink-0"
-                      title="Download PNG"
-                      download
-                    >
-                      Download
-                    </a>
-                  </div>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-muted">No visualizations available.</p>
-        {/if}
-      {/if}
-
-      <!-- Download Data -->
-      {#if activeTab === "download"}
-        <div class="row g-3">
-          <div class="col-md-4">
-            <div class="card h-100">
-              <div class="card-body text-center">
-                <h6 class="card-title">Dataset (CSV)</h6>
-                <button
-                  class="btn btn-outline-primary btn-sm"
-                  onclick={() => download("file", "Dataset")}
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="card h-100">
-              <div class="card-body text-center">
-                <h6 class="card-title">Results Report (CSV)</h6>
-                <button
-                  class="btn btn-outline-primary btn-sm"
-                  onclick={() => download("results", "Report")}
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="card h-100">
-              <div class="card-body text-center">
-                <h6 class="card-title">Output Log</h6>
-                <button
-                  class="btn btn-outline-primary btn-sm"
-                  onclick={() => download("output_log", "Log")}
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          </div>
-          {#each resultsData.rows as row}
-            {#if row.model}
-              <div class="col-md-4">
-                <div class="card h-100">
-                  <div class="card-body text-center">
-                    <h6 class="card-title">{row.model} Model</h6>
-                    <button
-                      class="btn btn-outline-primary btn-sm"
-                      onclick={() => download(`${row.model}_model.joblib`, "Model")}
-                    >
-                      Download .joblib
-                    </button>
-                  </div>
-                </div>
-              </div>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-
-      <!-- Prediction Insights (SHAP) -->
-      {#if activeTab === "shap"}
-        {#if shapModels.length > 0}
-          <div class="mb-3">
-            <label class="form-label" for="shap-model-select">Select Model</label>
-            <select
-              class="form-select"
-              id="shap-model-select"
-              style="max-width: 300px;"
-              bind:value={shapModel}
+      <div class="d-flex flex-column" style="height: calc(100vh - 232px); min-height: 360px;">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button
+              class="nav-link {activeTab === 'table' ? 'active' : ''}"
+              onclick={() => (activeTab = "table")}
             >
-              {#each shapModels as m}
-                <option value={m}>{m}</option>
-              {/each}
-            </select>
-          </div>
+              Results Table
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button
+              class="nav-link {activeTab === 'viz' ? 'active' : ''}"
+              onclick={() => (activeTab = "viz")}
+            >
+              Visualizations
+              {#if vizList.length > 0}
+                <span class="badge bg-secondary ms-1">{vizList.length}</span>
+              {/if}
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button
+              class="nav-link {activeTab === 'download' ? 'active' : ''}"
+              onclick={() => (activeTab = "download")}
+            >
+              Download Data
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button
+              class="nav-link {activeTab === 'shap' ? 'active' : ''}"
+              onclick={() => (activeTab = "shap")}
+            >
+              Prediction Insights
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button
+              class="nav-link {activeTab === 'log' ? 'active' : ''}"
+              onclick={() => (activeTab = "log")}
+            >
+              Output Log
+            </button>
+          </li>
+        </ul>
 
-          {#if shapColumns.length > 0}
+        <!-- Results Table -->
+        {#if activeTab === "table"}
+          {#if resultsData.rows.length > 0}
             <div class="table-responsive flex-grow-1" style="overflow: auto; min-height: 0;">
-              <table class="table table-sm table-striped">
-                <thead class="table-light sticky-top">
+              <table class="table table-sm table-striped table-hover align-middle">
+                <thead class="table-light">
                   <tr>
-                    {#each shapColumns as col}
-                      <th>{col}</th>
+                    <th>Model</th>
+                    {#each primaryCols as col (col)}
+                      <th class="text-end" title={metricDefs[col] || ""}>{colLabel(col)}</th>
                     {/each}
+                    <th class="text-end"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each shapRows as row}
+                  {#each resultsData.rows as row (row.model)}
                     <tr>
-                      {#each shapColumns as col}
-                        <td>{row[col] ?? ""}</td>
+                      <td>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-decoration-none fw-medium"
+                          onclick={() => toggleRow(row.model)}
+                          title="Show features and all metrics"
+                        >
+                          {row.model}
+                        </button>
+                        <span class="text-muted small ms-1">
+                          ({parseFeatures(row.features ?? "").length} features)
+                        </span>
+                      </td>
+                      {#each primaryCols as col (col)}
+                        <td class="text-end">{row[col] ?? "—"}</td>
                       {/each}
+                      <td class="text-end">
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline-secondary"
+                          onclick={() => toggleRow(row.model)}
+                          aria-expanded={expandedRows.has(row.model)}
+                          title={expandedRows.has(row.model) ? "Hide details" : "Show details"}
+                        >
+                          {expandedRows.has(row.model) ? "▲" : "▼"}
+                        </button>
+                      </td>
                     </tr>
+                    {#if expandedRows.has(row.model)}
+                      <tr>
+                        <td colspan={primaryCols.length + 2} class="bg-body-tertiary">
+                          <div class="mb-3">
+                            <div class="small fw-medium mb-1">
+                              Features ({parseFeatures(row.features ?? "").length})
+                            </div>
+                            <div class="d-flex flex-wrap gap-1">
+                              {#each parseFeatures(row.features ?? "") as feat (feat)}
+                                <span class="badge text-bg-light border">{feat}</span>
+                              {/each}
+                            </div>
+                          </div>
+                          {#if extraCols.length > 0}
+                            <div class="small fw-medium mb-1">All metrics</div>
+                            <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2">
+                              {#each extraCols as col (col)}
+                                <div class="col">
+                                  <div class="border rounded p-2 h-100 bg-body">
+                                    <div class="small text-muted" title={metricDefs[col] || ""}>
+                                      {col}
+                                    </div>
+                                    <div>{row[col] ?? "—"}</div>
+                                  </div>
+                                </div>
+                              {/each}
+                            </div>
+                          {/if}
+                        </td>
+                      </tr>
+                    {/if}
                   {/each}
                 </tbody>
               </table>
             </div>
           {:else}
-            <p class="text-muted">Loading SHAP data...</p>
+            <p class="text-muted">No results data available.</p>
           {/if}
-        {:else}
-          <p class="text-muted">
-            No SHAP data available. Enable SHAP in training options to see prediction insights.
-          </p>
         {/if}
-      {/if}
 
-      <!-- Output Log -->
-      {#if activeTab === "log"}
-        <div class="d-flex justify-content-end mb-2">
-          <button class="btn btn-outline-secondary btn-sm" onclick={copyLog} disabled={!outputLog}>
-            {#if logCopied}
-              Copied!
+        <!-- Visualizations -->
+        {#if activeTab === "viz"}
+          {#if vizList.length > 0}
+            <div class="row g-3">
+              {#each vizList as viz}
+                <div class="col-md-6 col-lg-4">
+                  <div class="card h-100">
+                    <button
+                      type="button"
+                      class="btn p-0 border-0"
+                      onclick={() => (lightboxViz = viz)}
+                      title="Click to enlarge"
+                    >
+                      <img
+                        src={vizImgUrl(viz)}
+                        class="card-img-top"
+                        alt={viz}
+                        loading="lazy"
+                        style="cursor: zoom-in;"
+                      />
+                    </button>
+                    <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                      <p class="card-text small text-muted mb-0 text-truncate">{viz}</p>
+                      <a
+                        href={vizDownloadUrl(viz)}
+                        class="btn btn-outline-secondary btn-sm ms-2 flex-shrink-0"
+                        title="Download PNG"
+                        download
+                      >
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-muted">No visualizations available.</p>
+          {/if}
+        {/if}
+
+        <!-- Download Data -->
+        {#if activeTab === "download"}
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="card h-100">
+                <div class="card-body text-center">
+                  <h6 class="card-title">Dataset (CSV)</h6>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    onclick={() => download("file", "Dataset")}
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card h-100">
+                <div class="card-body text-center">
+                  <h6 class="card-title">Results Report (CSV)</h6>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    onclick={() => download("results", "Report")}
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card h-100">
+                <div class="card-body text-center">
+                  <h6 class="card-title">Output Log</h6>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    onclick={() => download("output_log", "Log")}
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            </div>
+            {#each resultsData.rows as row}
+              {#if row.model}
+                <div class="col-md-4">
+                  <div class="card h-100">
+                    <div class="card-body text-center">
+                      <h6 class="card-title">{row.model} Model</h6>
+                      <button
+                        class="btn btn-outline-primary btn-sm"
+                        onclick={() => download(`${row.model}_model.joblib`, "Model")}
+                      >
+                        Download .joblib
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Prediction Insights (SHAP) -->
+        {#if activeTab === "shap"}
+          {#if shapModels.length > 0}
+            <div class="mb-3">
+              <label class="form-label" for="shap-model-select">Select Model</label>
+              <select
+                class="form-select"
+                id="shap-model-select"
+                style="max-width: 300px;"
+                bind:value={shapModel}
+              >
+                {#each shapModels as m}
+                  <option value={m}>{m}</option>
+                {/each}
+              </select>
+            </div>
+
+            {#if shapColumns.length > 0}
+              <div class="table-responsive flex-grow-1" style="overflow: auto; min-height: 0;">
+                <table class="table table-sm table-striped">
+                  <thead class="table-light sticky-top">
+                    <tr>
+                      {#each shapColumns as col}
+                        <th>{col}</th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each shapRows as row}
+                      <tr>
+                        {#each shapColumns as col}
+                          <td>{row[col] ?? ""}</td>
+                        {/each}
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             {:else}
-              Copy to Clipboard
+              <p class="text-muted">Loading SHAP data...</p>
             {/if}
-          </button>
-        </div>
-        <pre
-          class="bg-dark text-light p-3 rounded flex-grow-1"
-          style="overflow: auto; min-height: 0; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; user-select: text; cursor: text;">{outputLog ||
-            "No output log available."}</pre>
-      {/if}
-    </div>
+          {:else}
+            <p class="text-muted">
+              No SHAP data available. Enable SHAP in training options to see prediction insights.
+            </p>
+          {/if}
+        {/if}
+
+        <!-- Output Log -->
+        {#if activeTab === "log"}
+          <div class="d-flex justify-content-end mb-2">
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              onclick={copyLog}
+              disabled={!outputLog}
+            >
+              {#if logCopied}
+                Copied!
+              {:else}
+                Copy to Clipboard
+              {/if}
+            </button>
+          </div>
+          <pre
+            class="bg-dark text-light p-3 rounded flex-grow-1"
+            style="overflow: auto; min-height: 0; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; user-select: text; cursor: text;">{outputLog ||
+              "No output log available."}</pre>
+        {/if}
+      </div>
+    {/if}
   {/if}
 {/if}
 

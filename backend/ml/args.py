@@ -189,3 +189,106 @@ class TrainingArgs:
         from dataclasses import asdict
 
         return asdict(self)
+
+
+@dataclass
+class ForecastArgs:
+    """All parameters for a single forecasting (time-series) job.
+
+    Defaults mirror the Forecaster web app's job-configuration form.
+    Column roles (time component, target, grouping, covariates) are
+    resolved by the API from the dataset's saved time-series roles —
+    the engine receives them ready to use.
+    """
+
+    mode: str = "forecasting"
+
+    # ── Column roles (set by the API from the dataset's ts_roles) ──
+    time_component: str = ""
+    target: list[str] = field(default_factory=list)
+    grouping: list[str] = field(default_factory=list)
+    past_covariates: list[str] = field(default_factory=list)
+    future_covariates: list[str] = field(default_factory=list)
+    static_covariates: list[str] = field(default_factory=list)
+
+    # ── Global parameters ──
+    test_size: float = 0.2
+    expanding_window: bool = False
+    expanding_window_forecast_horizon: int = 6
+    expanding_window_stride: int = 6
+    visualize: bool = True
+    generate_real_predictions: bool = False
+    real_prediction_length: int = 12
+    fill_future_covariates: bool = True
+    probabilistic: bool = False
+    probabilistic_num_samples: int = 100
+    probabilistic_likelihood: str = "quantile"
+
+    # ── Models ──
+    train_group: list[str] = field(
+        default_factory=lambda: [
+            "linear-regression",
+            "random-forest",
+            "lgbm",
+            "xgboost",
+            "nlinear",
+            "tft",
+            "exponential-smoothing",
+            "arima",
+        ]
+    )
+
+    # ── Model parameters ──
+    arima_p: int = 12
+    arima_d: int = 1
+    arima_q: int = 6
+    lags: int = 12
+    lags_future: int = 0
+    output_chunk_length: int = 6
+    epochs: int = 10
+
+    # ── Retraining with new data ──
+    retrain: bool = False
+
+    # ── Forecast generation (mode="forecast-generation" jobs) ──
+    forecast_horizon: int = 12
+
+    # ── Set by the runner, not the user ──
+    report_uuid: str = ""
+    n_jobs: int = 0
+    prev_report_status: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ForecastArgs:
+        """Build ForecastArgs from a loosely-typed dict (e.g. from the API)."""
+        import dataclasses
+
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        kwargs: dict[str, Any] = {}
+
+        for key, value in data.items():
+            if key not in field_names:
+                continue
+            if isinstance(value, str):
+                lowered = value.lower()
+                if lowered == "true":
+                    kwargs[key] = True
+                elif lowered == "false":
+                    kwargs[key] = False
+                else:
+                    try:
+                        if "." in value or "e" in value.lower():
+                            kwargs[key] = float(value)
+                        else:
+                            kwargs[key] = int(value)
+                    except ValueError:
+                        kwargs[key] = value
+            else:
+                kwargs[key] = value
+        return cls(**kwargs)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize back to a plain dict (for DB storage)."""
+        from dataclasses import asdict
+
+        return asdict(self)

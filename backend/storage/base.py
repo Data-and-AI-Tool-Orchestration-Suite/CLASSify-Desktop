@@ -7,6 +7,7 @@ Every ML engine and API service talks to ``Storage`` instead of
     <report_id>/original_file         — untouched upload
     <report_id>/testset               — separate test set
     <report_id>/retest                — re-test dataset
+    <report_id>/retrain_file          — new data for model retraining
     <report_id>/report.csv            — metrics report
     <report_id>/results.json          — full results JSON
     <report_id>/output_log            — training stdout/stderr
@@ -14,6 +15,10 @@ Every ML engine and API service talks to ``Storage`` instead of
     <report_id>/scaler.joblib         — fitted scaler
     <report_id>/shap_rows_<model>     — per-row SHAP CSV
     <report_id>/viz/<CHART>_<model>   — visualization PNGs
+    <report_id>/forecast_data_<model> — forecasting chart data JSON
+    <report_id>/forecasts             — generated future forecasts JSON
+    <report_id>/forecast_generation_log — forecast generation log
+    <report_id>/future_covariates     — uploaded future covariate CSV
     <report_id>/progress.json         — live job progress
 """
 
