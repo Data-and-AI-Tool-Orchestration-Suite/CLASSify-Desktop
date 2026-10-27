@@ -215,13 +215,6 @@ def _start_forecasting_job(
     settings: Settings,
 ) -> JobResponse:
     """Build forecasting args from the dataset's saved time-series roles."""
-    if not is_available("darts"):
-        raise HTTPException(
-            status_code=400,
-            detail="The Forecasting add-on is not installed. "
-            "Install it via the Add-ons page to train forecasting models.",
-        )
-
     ts_roles = (report.column_changes or {}).get("ts_roles") or []
     if not ts_roles:
         raise HTTPException(
@@ -236,6 +229,13 @@ def _start_forecasting_job(
         raise HTTPException(
             status_code=400,
             detail="A time component and at least one target column are required for forecasting",
+        )
+
+    if not is_available("darts"):
+        raise HTTPException(
+            status_code=400,
+            detail="The Forecasting add-on is not installed. "
+            "Install it via the Add-ons page to train forecasting models.",
         )
 
     if args.get("retrain"):
