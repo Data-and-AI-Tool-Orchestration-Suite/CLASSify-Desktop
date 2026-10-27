@@ -252,6 +252,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{report_id}/ts-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Ts Roles
+         * @description Save forecasting column roles (time component, target, covariates...).
+         *
+         *     Unlike classification column changes, no data transformation happens —
+         *     the forecasting engine reads the original file and handles date parsing,
+         *     missing values and categorical encoding itself.
+         */
+        post: operations["set_ts_roles_api_datasets__report_id__ts_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{report_id}/class-values": {
         parameters: {
             query?: never;
@@ -306,6 +330,29 @@ export interface paths {
          * @description Upload a separate test set CSV.
          */
         post: operations["upload_testset_api_datasets__report_id__testset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{report_id}/retrain-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Retrain Data
+         * @description Upload a new-data CSV for retraining forecasting models.
+         *
+         *     The file must follow the same format as the original dataset; the
+         *     forecasting engine appends it to the existing series when retrain=true.
+         */
+        post: operations["upload_retrain_data_api_datasets__report_id__retrain_data_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -440,6 +487,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/forecast-generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Forecast Generation
+         * @description Generate future forecasts with saved models from a completed run.
+         */
+        post: operations["start_forecast_generation_api_jobs_forecast_generation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/active/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Job For Report
+         * @description Get the queued or running job for a dataset, if any.
+         */
+        get: operations["get_active_job_for_report_api_jobs_active__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -542,6 +629,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/ml-options/forecasting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ml Options Forecasting
+         * @description Get forecasting options for the Prepare page.
+         */
+        get: operations["ml_options_forecasting_api_jobs_ml_options_forecasting_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/recover": {
         parameters: {
             query?: never;
@@ -614,6 +721,46 @@ export interface paths {
          * @description Serve a single visualization PNG.
          */
         get: operations["get_visualization_api_results__report_id__viz__viz_name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/results/{report_id}/forecast-data/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Forecast Data
+         * @description Get the per-model interactive chart data (train/val/pred series).
+         */
+        get: operations["get_forecast_data_api_results__report_id__forecast_data__model__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/results/{report_id}/forecasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Future Forecasts
+         * @description Get generated future forecasts (from a forecast-generation job).
+         */
+        get: operations["get_future_forecasts_api_results__report_id__forecasts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -794,6 +941,67 @@ export interface paths {
          * @description Get output log for a specific (archived or current) run.
          */
         get: operations["get_run_output_log_api_results__report_id__runs__job_id__output_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/results/{report_id}/forecast-generation-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Forecast Generation Log
+         * @description Get the log of the latest forecast-generation job (kept separate from
+         *     the training output_log so generating forecasts preserves both).
+         */
+        get: operations["get_forecast_generation_log_api_results__report_id__forecast_generation_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/results/{report_id}/runs/{job_id}/forecast-data/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Forecast Data
+         * @description Get per-model chart data for a specific (archived or current) run.
+         */
+        get: operations["get_run_forecast_data_api_results__report_id__runs__job_id__forecast_data__model__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/results/{report_id}/runs/{job_id}/forecasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Future Forecasts
+         * @description Get generated future forecasts for a specific (archived or current) run.
+         */
+        get: operations["get_run_future_forecasts_api_results__report_id__runs__job_id__forecasts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1097,8 +1305,30 @@ export interface components {
             /** Testset */
             testset: string;
         };
+        /** Body_start_forecast_generation_api_jobs_forecast_generation_post */
+        Body_start_forecast_generation_api_jobs_forecast_generation_post: {
+            /** Report Id */
+            report_id: string;
+            /**
+             * Forecast Horizon
+             * @default 12
+             */
+            forecast_horizon: number;
+            /**
+             * Models
+             * @default
+             */
+            models: string;
+            /** Future Covariates */
+            future_covariates?: string | null;
+        };
         /** Body_upload_dataset_api_datasets_upload_post */
         Body_upload_dataset_api_datasets_upload_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_retrain_data_api_datasets__report_id__retrain_data_post */
+        Body_upload_retrain_data_api_datasets__report_id__retrain_data_post: {
             /** File */
             file: string;
         };
@@ -1459,6 +1689,9 @@ export interface components {
         /**
          * TrainRequest
          * @description POST /api/jobs — start training.
+         *
+         *     ``mode`` selects the engine: "classification" (supervised or
+         *     unsupervised) or "forecasting" (time series via the Darts addon).
          */
         TrainRequest: {
             /** Report Id */
@@ -1467,6 +1700,44 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             }[];
+            /**
+             * Mode
+             * @default classification
+             */
+            mode: string;
+        };
+        /**
+         * TsRoleRequest
+         * @description A single column's time-series role assignment.
+         */
+        TsRoleRequest: {
+            /** Column */
+            column: string;
+            /** Role */
+            role: string;
+        };
+        /**
+         * TsRolesRequest
+         * @description POST /api/datasets/{id}/ts-roles — save forecasting column roles.
+         */
+        TsRolesRequest: {
+            /** Roles */
+            roles?: components["schemas"]["TsRoleRequest"][];
+        };
+        /**
+         * TsRolesResponse
+         * @description Response for the ts-roles endpoint.
+         */
+        TsRolesResponse: {
+            /** Success */
+            success: boolean;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Roles */
+            roles?: components["schemas"]["TsRoleRequest"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1808,6 +2079,41 @@ export interface operations {
             };
         };
     };
+    set_ts_roles_api_datasets__report_id__ts_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TsRolesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TsRolesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_class_values_api_datasets__report_id__class_values_get: {
         parameters: {
             query: {
@@ -1891,6 +2197,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_upload_testset_api_datasets__report_id__testset_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_retrain_data_api_datasets__report_id__retrain_data_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_retrain_data_api_datasets__report_id__retrain_data_post"];
             };
         };
         responses: {
@@ -2164,6 +2505,70 @@ export interface operations {
             };
         };
     };
+    start_forecast_generation_api_jobs_forecast_generation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_start_forecast_generation_api_jobs_forecast_generation_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_job_for_report_api_jobs_active__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_job_status_api_jobs__job_id__get: {
         parameters: {
             query?: never;
@@ -2303,6 +2708,28 @@ export interface operations {
             };
         };
     };
+    ml_options_forecasting_api_jobs_ml_options_forecasting_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     recover_stale_jobs_api_jobs_recover_post: {
         parameters: {
             query?: never;
@@ -2406,6 +2833,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_forecast_data_api_results__report_id__forecast_data__model__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_future_forecasts_api_results__report_id__forecasts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -2700,6 +3194,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OutputLogResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_forecast_generation_log_api_results__report_id__forecast_generation_log_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputLogResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_forecast_data_api_results__report_id__runs__job_id__forecast_data__model__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                job_id: string;
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_future_forecasts_api_results__report_id__runs__job_id__forecasts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

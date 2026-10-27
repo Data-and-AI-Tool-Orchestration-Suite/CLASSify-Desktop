@@ -17,7 +17,7 @@ router = APIRouter()
 # Stable URL for the update manifest — always redirects to the latest stable release
 UPDATE_MANIFEST_URL = "https://github.com/Data-and-AI-Tool-Orchestration-Suite/CLASSify-Desktop/releases/latest/download/latest.json"
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 
 
 @router.get("/health")
@@ -175,4 +175,16 @@ def metric_definitions() -> dict[str, object]:
         "silhouette_score": "Clustering: how similar an object is to its own cluster vs others. Range [-1, 1], higher is better.",
         "calinski_harabasz_score": "Clustering: ratio of between-cluster to within-cluster dispersion. Higher is better.",
         "davies_bouldin_score": "Clustering: average similarity ratio of each cluster. Lower is better (minimum 0).",
+        "Normalized MAE": "Mean Absolute Error on data scaled between 0 and 1. The average absolute difference between predicted and actual values.",
+        "Normalized MSE": "Mean Squared Error on data scaled between 0 and 1.",
+        "Normalized RMSE": "Root Mean Squared Error on data scaled between 0 and 1.",
+        "Normalized MAPE": "Mean Absolute Percentage Error on data scaled between 0 and 1.",
+        "Normalized SMAPE": "Symmetric Mean Absolute Percentage Error on scaled data: adjusted MAPE to be less sensitive to outliers or zero values.",
+        "De-Normalized MAE": "Mean Absolute Error on the original, unscaled data. The average absolute difference between predicted and actual values.",
+        "De-Normalized MSE": "Mean Squared Error on the original, unscaled data.",
+        "De-Normalized RMSE": "Root Mean Squared Error on the original, unscaled data.",
+        "De-Normalized MAPE": "Mean Absolute Percentage Error on the original, unscaled data.",
+        "De-Normalized SMAPE": "Symmetric Mean Absolute Percentage Error on unscaled data: adjusted MAPE to be less sensitive to outliers or zero values.",
+        "R-squared": "The proportion of variance in the target series that is predictable from the variables in the model.",
+        "MASE": "Mean Absolute Scaled Error: error relative to the error of a naive forecast. Values below 1 beat the naive baseline.",
     }
